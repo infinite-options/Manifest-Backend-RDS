@@ -15,6 +15,9 @@ from hashlib import sha512
 from math import ceil
 import string
 import random
+import os
+import hashlib
+
 #regex
 import re
 # from env_keys import BING_API_KEY, RDS_PW
@@ -35,7 +38,7 @@ RDS_HOST = 'io-mysqldb8.cxjnrciilyjq.us-west-1.rds.amazonaws.com'
 RDS_PORT = 3306
 RDS_USER = 'admin'
 RDS_DB = 'manifest'
-# RDS_PW = 'prashant'
+RDS_PW = 'prashant'
 
 app = Flask(__name__)
 cors = CORS(app, resources={r'/api/*': {'origins': '*'}})
@@ -119,7 +122,6 @@ def serializeResponse(response):
 # OPTIONAL: Set skipSerialization to True to skip default JSON response serialization
 def execute(sql, cmd, conn, skipSerialization=False):
     response = {}
-    print(sql)
     try:
         with conn.cursor() as cur:
             cur.execute(sql)
@@ -163,13 +165,12 @@ class Routines(Resource):
             #returns Routines of all users
             if user_id is None:
                 query = """SELECT * FROM 
-                                goals_routines 
-                                WHERE is_persistent = 'TRUE';"""
+                                goals_routines ;"""
 
             #returns Routines of a Particular user_id
             else:
                 query = """SELECT * FROM goals_routines WHERE 
-                             is_persistent = 'TRUE' and user_id = \'""" +user_id+ """\';"""
+                             user_id = \'""" +user_id+ """\';"""
             items = execute(query,'get', conn)
 
 
@@ -1327,6 +1328,92 @@ class UpdateTime(Resource):
         finally:
             disconnect(conn)
 
+class NewTA(Resource):
+    def post(self):    
+        response = {}
+        items = {}
+
+        try:
+            conn = connect()
+            data = request.get_json(force=True)
+            email_id = data['email_id']
+            password = data['password']
+            first_name = data['first_name']
+            last_name = data['last_name']
+            phone_number = data['phone_number']
+            employer = data['employer']
+            salt = os.urandom(32)
+           
+            dk = hashlib.pbkdf2_hmac('sha256',  password.encode('utf-8') , salt, 100000, dklen=128)
+            key = (salt + dk).hex()
+
+            NewPeopleIDresponse = execute("CALL get_ta_people_id;", 'get', conn)
+            NewPeopleID = NewPeopleIDresponse['result'][0]['new_id']
+
+            execute("""INSERT INTO ta_people(
+                                        unique_id
+                                        , email_id
+                                        , first_name
+                                        , last_name
+                                        , employer
+                                        , password
+                                        , phone_number
+                                        , type)
+                                        VALUES ( 
+                                            \'""" + NewPeopleID + """\'
+                                            , \'""" + email_id + """\'
+                                            , \'""" + first_name + """\'
+                                            , \'""" + last_name + """\'
+                                            , \'""" + '' + """\'
+                                            , \'""" + key + """\'
+                                            , \'""" + phone_number + """\'
+                                            , \'""" + 'trusted_advisor' + """\')""", 'post', conn)
+            response['message'] = 'successful'
+            response['result'] = items
+
+            return response, 200
+        except:
+            raise BadRequest('Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
+
+class TALogin(Resource):
+    def post(self):    
+        response = {}
+        items = {}
+
+        try:
+            conn = connect()
+            data = request.get_json(force=True)
+            email_id = data['email_id']
+            password = data['password']
+
+            emailIDResponse = execute("""SELECT password from ta_people where email_id = \'""" + email_id + """\'""", 'get', conn)
+            password_storage = emailIDResponse['result'][0]['password']
+
+            original = bytes.fromhex(password_storage)
+            salt_from_storage = original[:32] 
+            key_from_storage = original[32:]
+
+            new_dk = hashlib.pbkdf2_hmac('sha256',  password.encode('utf-8') , salt_from_storage, 100000, dklen=128)
+            
+            if key_from_storage == new_dk:
+                items.update({email_id:"true"})
+            else:
+                items.update({email_id:"Wrong password"})                
+
+
+            response['message'] = 'successful'
+            response['result'] = items
+
+            return response, 200
+        except:
+            raise BadRequest('Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
+
 # Define API routes
 
 # Still uses getRdsConn()
@@ -1341,8 +1428,8 @@ class UpdateTime(Resource):
 # Run on below IP address and port
 # Make sure port number is unused (i.e. don't use numbers 0-1023)
 
-api.add_resource(Routines, '/api/v2/getroutines', '/api/v2/getroutines/<string:user_id>')
-api.add_resource(Goals, '/api/v2/getgoals', '/api/v2/getgoals/<string:user_id>')
+api.add_resource(Routines, '/api/v2/getgoalsandroutines', '/api/v2/getgoalsandroutines/<string:user_id>')
+api.add_resource(Goals, '/api/v2/getgoalsandroutines', '/api/v2/getgoals/<string:user_id>')
 api.add_resource(AboutMe, '/api/v2/aboutme', '/api/v2/aboutme/<string:user_id>')
 api.add_resource(ListAllTA, '/api/v2/listAllTA', '/api/v2/listAllTA/<string:user_id>')
 api.add_resource(AnotherTAAccess, '/api/v2/anotherTA')
@@ -1357,6 +1444,8 @@ api.add_resource(MonthlyView, '/api/v2/monthlyView/<user_id>')
 api.add_resource(CreateNewPeople, '/api/v2/addImportantPeople')
 api.add_resource(DeletePeople, '/api/v2/deletePeople')
 api.add_resource(UpdateTime, '/api/v2/updateTime/<user_id>')
+api.add_resource(NewTA, '/api/v2/addNewTA')
+api.add_resource(TALogin, '/api/v2/loginTA')
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=3000)
