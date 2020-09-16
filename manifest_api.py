@@ -151,7 +151,7 @@ def execute(sql, cmd, conn, skipSerialization=False):
         return response
 
 # Returns Routines
-class Routines(Resource):
+class GoalsRoutines(Resource):
     def get(self, user_id = None):
         response = {}
         items = {}
@@ -183,38 +183,6 @@ class Routines(Resource):
         finally:
             disconnect(conn)
 
-# Returns Goals
-class Goals(Resource):
-    def get(self, user_id=None):
-        response = {}
-        items = {}
-        try:
-
-            conn = connect()
-            query = None
-            data = request.json
-            query = None
-
-            #returns Goals of all users
-            if user_id is None:
-                query = """SELECT * FROM 
-                                goals_routines 
-                                WHERE is_persistent = 'FALSE';"""
-
-            #returns Goals of a Particular user_id
-            else:
-                query = """SELECT * FROM goals_routines WHERE 
-                             is_persistent = 'FALSE' and user_id = \'""" +user_id+ """\';"""
-            items = execute(query,'get', conn)
-
-            response['message'] = 'successful'
-            response['result'] = items
-
-            return response, 200
-        except:
-            raise BadRequest('Request failed, please try again later.')
-        finally:
-            disconnect(conn)
 
 # returns About me information
 class AboutMe(Resource):
@@ -269,7 +237,7 @@ class AboutMe(Resource):
         finally:
             disconnect(conn)
 
-# returns About me information
+# returns all users of a TA
 class AllUsers(Resource):
     def get(self, ta_id = None):
         response = {}
@@ -283,6 +251,7 @@ class AllUsers(Resource):
         
             query = """SELECT CONCAT(first_name, SPACE(1), last_name) as user_name
                             , user_unique_id
+                        
                         FROM
                         users
                         JOIN
@@ -303,6 +272,7 @@ class AllUsers(Resource):
         finally:
             disconnect(conn)
 
+# Returns all TA of a user
 class ListAllTA(Resource):
     def get(self, user_id = None):    
         response = {}
@@ -327,9 +297,6 @@ class ListAllTA(Resource):
                             and type = 'trusted_advisor'"""
         
             items = execute(query, 'get', conn)
-
-                # Load all the results as a list of dictionaries
-
             response['message'] = 'successful'
             response['result'] = items
 
@@ -339,6 +306,7 @@ class ListAllTA(Resource):
         finally:
             disconnect(conn)
 
+# Add another TA for a user
 class AnotherTAAccess(Resource):
     def post(self):    
         response = {}
@@ -372,7 +340,6 @@ class AnotherTAAccess(Resource):
                         , \'""" + '' + """\'
                         , \'""" + '' + """\');""")
 
-            print(query[1])
             items = execute(query[1], 'post', conn)
 
                 # Load all the results as a list of dictionaries
@@ -386,6 +353,7 @@ class AnotherTAAccess(Resource):
         finally:
             disconnect(conn)
 
+# Returns Important People data of a user
 class ImportantPeople(Resource):
     def get(self, user_id = None):
         response = {}
@@ -442,6 +410,7 @@ class ImportantPeople(Resource):
         finally:
             disconnect(conn)
 
+# Add new Goal/Routine of a user
 class addNewGR(Resource):
     def post(self):    
         response = {}
@@ -453,6 +422,7 @@ class addNewGR(Resource):
 
             gr_title = data['gr_title']
             user_id = data['user_id']
+            ta_id = data['ta_id']
             is_available = data['is_available']
             is_displayed_today = data['is_displayed_today']
             is_persistent = data['is_persistent']
@@ -469,13 +439,40 @@ class addNewGR(Resource):
             repeat_week_days = data['repeat_week_days']
             end_day_and_time = data['end_day_and_time']
             expected_completion_time = data['expected_completion_time']
+            ta_before_is_enable = data['ta_notifications']['before']['is_enable']
+            ta_before_is_set = data['ta_notifications']['before']['is_set']
+            ta_before_message = data['ta_notifications']['before']['message']
+            ta_before_time = data['ta_notifications']['before']['time']
+            ta_during_is_enable = data['ta_notifications']['during']['is_enable']
+            ta_during_is_set = data['ta_notifications']['during']['is_set']
+            ta_during_message = data['ta_notifications']['during']['message']
+            ta_during_time = data['ta_notifications']['during']['time']
+            ta_after_is_enable = data['ta_notifications']['after']['is_enable']
+            ta_after_is_set = data['ta_notifications']['after']['is_set']
+            ta_after_message = data['ta_notifications']['after']['message']
+            ta_after_time = data['ta_notifications']['after']['time']
+            user_before_is_enable = data['user_notifications']['before']['is_enable']
+            user_before_is_set = data['user_notifications']['before']['is_set']
+            user_before_message = data['user_notifications']['before']['message']
+            user_before_time = data['user_notifications']['before']['time']
+            user_during_is_enable = data['user_notifications']['during']['is_enable']
+            user_during_is_set = data['user_notifications']['during']['is_set']
+            user_during_message = data['user_notifications']['during']['message']
+            user_during_time = data['user_notifications']['during']['time']
+            user_after_is_enable = data['user_notifications']['after']['is_enable']
+            user_after_is_set = data['user_notifications']['after']['is_set']
+            user_after_message = data['user_notifications']['after']['message']
+            user_after_time = data['user_notifications']['after']['time']
 
             datetime_completed = 'Sun, 23 Feb 2020 00:08:43 GMT'
             datetime_started = 'Sun, 23 Feb 2020 00:08:43 GMT'
-            query = ["CALL get_gr_id();"]
+
+            # New Goal/Routine ID
+            query = ["CALL get_gr_id;"]
             NewGRIDresponse = execute(query[0],  'get', conn)
             NewGRID = NewGRIDresponse['result'][0]['new_id']
 
+            # Add G/R to database
             query.append("""INSERT INTO goals_routines(gr_unique_id
                             , gr_title
                             , user_id
@@ -498,8 +495,7 @@ class addNewGR(Resource):
                             , datetime_completed
                             , datetime_started
                             , end_day_and_time
-                            , expected_completion_time
-                            , completed)
+                            , expected_completion_time)
                         VALUES 
                         ( \'""" + NewGRID + """\'
                         , \'""" + gr_title + """\'
@@ -523,12 +519,88 @@ class addNewGR(Resource):
                         , \'""" + datetime_completed + """\'
                         , \'""" + datetime_started + """\'
                         , \'""" + end_day_and_time + """\'
-                        , \'""" + expected_completion_time + """\'
-                        , \'""" + 'FALSE' + """\');""")
+                        , \'""" + expected_completion_time + """\');""")
 
-            items = execute(query[1], 'post', conn)
+            execute(query[1], 'post', conn)
 
-                # Load all the results as a list of dictionaries
+            # New Notification ID
+            NewNotificationIDresponse = execute("CALL get_notification_id;",  'get', conn)
+            NewNotificationID = NewNotificationIDresponse['result'][0]['new_id']
+
+            # TA notfication
+            query.append("""Insert into notifications
+                                (notification_id
+                                    , user_ta_id
+                                    , gr_at_id
+                                    , before_is_enable
+                                    , before_is_set
+                                    , before_message
+                                    , before_time
+                                    , during_is_enable
+                                    , during_is_set
+                                    , during_message
+                                    , during_time
+                                    , after_is_enable
+                                    , after_is_set
+                                    , after_message
+                                    , after_time) 
+                                VALUES
+                                (     \'""" + NewNotificationID + """\'
+                                    , \'""" + ta_id + """\'
+                                    , \'""" + NewGRID + """\'
+                                    , \'""" + ta_before_is_enable + """\'
+                                    , \'""" + ta_before_is_set + """\'
+                                    , \'""" + ta_before_message + """\'
+                                    , \'""" + ta_before_time + """\'
+                                    , \'""" + ta_during_is_enable + """\'
+                                    , \'""" + ta_during_is_set + """\'
+                                    , \'""" + ta_during_message + """\'
+                                    , \'""" + ta_during_time + """\'
+                                    , \'""" + ta_after_is_enable + """\'
+                                    , \'""" + ta_after_is_set + """\'
+                                    , \'""" + ta_after_message + """\'
+                                    , \'""" + ta_after_time + """\');""")
+            execute(query[2], 'post', conn)
+
+            # New notification ID
+            NewNotificationIDresponse = execute("CALL get_notification_id;",  'get', conn)
+            NewNotificationID = NewNotificationIDresponse['result'][0]['new_id']
+
+            # User notfication
+            query.append("""Insert into notifications
+                                (notification_id
+                                    , user_ta_id
+                                    , gr_at_id
+                                    , before_is_enable
+                                    , before_is_set
+                                    , before_message
+                                    , before_time
+                                    , during_is_enable
+                                    , during_is_set
+                                    , during_message
+                                    , during_time
+                                    , after_is_enable
+                                    , after_is_set
+                                    , after_message
+                                    , after_time) 
+                                VALUES
+                                (     \'""" + NewNotificationID + """\'
+                                    , \'""" + user_id + """\'
+                                    , \'""" + NewGRID + """\'
+                                    , \'""" + user_before_is_enable + """\'
+                                    , \'""" + user_before_is_set + """\'
+                                    , \'""" + user_before_message + """\'
+                                    , \'""" + user_before_time + """\'
+                                    , \'""" + user_during_is_enable + """\'
+                                    , \'""" + user_during_is_set + """\'
+                                    , \'""" + user_during_message + """\'
+                                    , \'""" + user_during_time + """\'
+                                    , \'""" + user_after_is_enable + """\'
+                                    , \'""" + user_after_is_set + """\'
+                                    , \'""" + user_after_message + """\'
+                                    , \'""" + user_after_time + """\');""")
+            items = execute(query[3], 'post', conn)
+
 
             response['message'] = 'successful'
             response['result'] = items
@@ -549,6 +621,8 @@ class addNewAT(Resource):
             conn = connect()
             data = request.get_json(force=True)
 
+            user_id = data['user_id']
+            ta_id = data['ta_id']
             at_title = data['at_title']
             goal_routine_id = data['goal_routine_id']
             is_available = data['is_available']
@@ -557,6 +631,31 @@ class addNewAT(Resource):
             photo = data['photo']
             is_timed = data['is_timed']
             expected_completion_time = data['expected_completion_time']
+            ta_before_is_enable = data['ta_notifications']['before']['is_enable']
+            ta_before_is_set = data['ta_notifications']['before']['is_set']
+            ta_before_message = data['ta_notifications']['before']['message']
+            ta_before_time = data['ta_notifications']['before']['time']
+            ta_during_is_enable = data['ta_notifications']['during']['is_enable']
+            ta_during_is_set = data['ta_notifications']['during']['is_set']
+            ta_during_message = data['ta_notifications']['during']['message']
+            ta_during_time = data['ta_notifications']['during']['time']
+            ta_after_is_enable = data['ta_notifications']['after']['is_enable']
+            ta_after_is_set = data['ta_notifications']['after']['is_set']
+            ta_after_message = data['ta_notifications']['after']['message']
+            ta_after_time = data['ta_notifications']['after']['time']
+            user_before_is_enable = data['user_notifications']['before']['is_enable']
+            user_before_is_set = data['user_notifications']['before']['is_set']
+            user_before_message = data['user_notifications']['before']['message']
+            user_before_time = data['user_notifications']['before']['time']
+            user_during_is_enable = data['user_notifications']['during']['is_enable']
+            user_during_is_set = data['user_notifications']['during']['is_set']
+            user_during_message = data['user_notifications']['during']['message']
+            user_during_time = data['user_notifications']['during']['time']
+            user_after_is_enable = data['user_notifications']['after']['is_enable']
+            user_after_is_set = data['user_notifications']['after']['is_set']
+            user_after_message = data['user_notifications']['after']['message']
+            user_after_time = data['user_notifications']['after']['time']
+
 
             datetime_completed = 'Sun, 23 Feb 2020 00:08:43 GMT'
             datetime_started = 'Sun, 23 Feb 2020 00:08:43 GMT'
@@ -608,7 +707,84 @@ class addNewAT(Resource):
 
             items = execute(query[2], 'post', conn)
 
-                # Load all the results as a list of dictionaries
+            # New Notification ID
+            NewNotificationIDresponse = execute("CALL get_notification_id;",  'get', conn)
+            NewNotificationID = NewNotificationIDresponse['result'][0]['new_id']
+
+            # TA notfication
+            query.append("""Insert into notifications
+                                (notification_id
+                                    , user_ta_id
+                                    , gr_at_id
+                                    , before_is_enable
+                                    , before_is_set
+                                    , before_message
+                                    , before_time
+                                    , during_is_enable
+                                    , during_is_set
+                                    , during_message
+                                    , during_time
+                                    , after_is_enable
+                                    , after_is_set
+                                    , after_message
+                                    , after_time) 
+                                VALUES
+                                (     \'""" + NewNotificationID + """\'
+                                    , \'""" + ta_id + """\'
+                                    , \'""" + NewATID + """\'
+                                    , \'""" + ta_before_is_enable + """\'
+                                    , \'""" + ta_before_is_set + """\'
+                                    , \'""" + ta_before_message + """\'
+                                    , \'""" + ta_before_time + """\'
+                                    , \'""" + ta_during_is_enable + """\'
+                                    , \'""" + ta_during_is_set + """\'
+                                    , \'""" + ta_during_message + """\'
+                                    , \'""" + ta_during_time + """\'
+                                    , \'""" + ta_after_is_enable + """\'
+                                    , \'""" + ta_after_is_set + """\'
+                                    , \'""" + ta_after_message + """\'
+                                    , \'""" + ta_after_time + """\');""")
+            execute(query[3], 'post', conn)
+
+            # New notification ID
+            NewNotificationIDresponse = execute("CALL get_notification_id;",  'get', conn)
+            NewNotificationID = NewNotificationIDresponse['result'][0]['new_id']
+
+            # User notfication
+            query.append("""Insert into notifications
+                                (notification_id
+                                    , user_ta_id
+                                    , gr_at_id
+                                    , before_is_enable
+                                    , before_is_set
+                                    , before_message
+                                    , before_time
+                                    , during_is_enable
+                                    , during_is_set
+                                    , during_message
+                                    , during_time
+                                    , after_is_enable
+                                    , after_is_set
+                                    , after_message
+                                    , after_time) 
+                                VALUES
+                                (     \'""" + NewNotificationID + """\'
+                                    , \'""" + user_id + """\'
+                                    , \'""" + NewATID + """\'
+                                    , \'""" + user_before_is_enable + """\'
+                                    , \'""" + user_before_is_set + """\'
+                                    , \'""" + user_before_message + """\'
+                                    , \'""" + user_before_time + """\'
+                                    , \'""" + user_during_is_enable + """\'
+                                    , \'""" + user_during_is_set + """\'
+                                    , \'""" + user_during_message + """\'
+                                    , \'""" + user_during_time + """\'
+                                    , \'""" + user_after_is_enable + """\'
+                                    , \'""" + user_after_is_set + """\'
+                                    , \'""" + user_after_message + """\'
+                                    , \'""" + user_after_time + """\');""")
+            execute(query[4], 'post', conn)
+
 
             response['message'] = 'successful'
             response['result'] = items
@@ -619,6 +795,7 @@ class addNewAT(Resource):
         finally:
             disconnect(conn)
 
+# Delete Goal/Routine
 class DeleteGR(Resource):
     def post(self):    
         response = {}
@@ -633,7 +810,9 @@ class DeleteGR(Resource):
             query = ["""DELETE FROM goals_routines WHERE gr_unique_id = \'""" + goal_routine_id + """\';"""]
             
             execute(query[0], 'post', conn)
-            print(query[0])
+            
+            execute("""DELETE FROM notifications 
+                        WHERE gr_at_id = \'""" + goal_routine_id + """\';""", 'post', conn)
 
             query.append("""SELECT at_unique_id FROM actions_tasks 
                             WHERE goal_routine_id = \'""" + goal_routine_id + """\';""")
@@ -643,6 +822,8 @@ class DeleteGR(Resource):
             for i in range(len(atResponse['result'])):
                 at_id = atResponse['result'][i]['at_unique_id']
                 execute("""DELETE FROM actions_tasks WHERE at_unique_id = \'""" + at_id + """\';""", None, 'post', conn)
+                execute("""DELETE FROM notifications 
+                            WHERE gr_at_id = \'""" + at_id + """\';""", 'post', conn)
 
             response['message'] = 'successful'
             response['result'] = items
@@ -653,6 +834,7 @@ class DeleteGR(Resource):
         finally:
             disconnect(conn)
 
+# Delete Action/Task
 class DeleteAT(Resource):
     def post(self):    
         response = {}
@@ -668,6 +850,9 @@ class DeleteAT(Resource):
             
             execute(query[0], 'post', conn)
 
+            execute("""DELETE FROM notifications 
+                            WHERE gr_at_id = \'""" + at_id + """\';""", 'post', conn)
+
             response['message'] = 'successful'
             response['result'] = items
 
@@ -677,6 +862,7 @@ class DeleteAT(Resource):
         finally:
             disconnect(conn)
 
+# day's view
 class DailyView(Resource):
     def get(self, user_id):    
         response = {}
@@ -698,6 +884,7 @@ class DailyView(Resource):
         finally:
             disconnect(conn)
 
+# Week's view
 class WeeklyView(Resource):
     def get(self, user_id):    
         response = {}
@@ -722,6 +909,7 @@ class WeeklyView(Resource):
         finally:
             disconnect(conn)
 
+# Month's view
 class MonthlyView(Resource):
     def get(self, user_id):    
         response = {}
@@ -1191,6 +1379,7 @@ class VariousRepeatations():
 
         return items
 
+# Add new people
 class CreateNewPeople(Resource):
     def post(self):    
         response = {}
@@ -1290,7 +1479,6 @@ class CreateNewPeople(Resource):
                                             , \'""" + phone_number + """\'
                                             , \'""" + ta_people_type + """\')""", 'post', conn)
 
-                print("P")
             response['message'] = 'successful'
             response['result'] = items
 
@@ -1300,6 +1488,7 @@ class CreateNewPeople(Resource):
         finally:
             disconnect(conn)
 
+# Delete Important people
 class DeletePeople(Resource):
     def post(self):    
         response = {}
@@ -1325,6 +1514,7 @@ class DeletePeople(Resource):
         finally:
             disconnect(conn)
 
+# Update time and time zone
 class UpdateTime(Resource):
     def post(self, user_id):    
         response = {}
@@ -1362,6 +1552,7 @@ class UpdateTime(Resource):
         finally:
             disconnect(conn)
 
+# New TA signup
 class NewTA(Resource):
     def post(self):    
         response = {}
@@ -1411,6 +1602,7 @@ class NewTA(Resource):
         finally:
             disconnect(conn)
 
+# TA social sign up
 class TASocialSignUP(Resource):
     def post(self):    
         response = {}
@@ -1453,7 +1645,7 @@ class TASocialSignUP(Resource):
         finally:
             disconnect(conn)
 
-
+# Existing TA login
 class TALogin(Resource):
     def get(self, email_id, password):    
         response = {}
@@ -1492,14 +1684,13 @@ class TALogin(Resource):
                 response['result'] = False 
                 response['message'] = 'Email ID doesnt exist'
            
-
-
             return response, 200
         except:
             raise BadRequest('Request failed, please try again later.')
         finally:
             disconnect(conn)
 
+# TA social login
 class SocialLogin(Resource):
     def get(self, email_id):    
         response = {}
@@ -1531,6 +1722,7 @@ class SocialLogin(Resource):
         finally:
             disconnect(conn)
 
+# Creating new user
 class CreateNewUser(Resource):
     def post(self):    
         response = {}
@@ -1587,6 +1779,7 @@ class CreateNewUser(Resource):
         finally:
             disconnect(conn)
 
+# Update new user
 class UpdateNewUser(Resource):
     def post(self):    
         response = {}
@@ -1660,6 +1853,61 @@ class UpdateNewUser(Resource):
         finally:
             disconnect(conn)
 
+# Update new user
+class UpdateNameTimeZone(Resource):
+    def post(self):    
+        response = {}
+        items = {}
+
+        try:
+            conn = connect()
+            data = request.get_json(force=True)
+            email_id = data['email_id']
+            first_name = data['first_name']
+            last_name = data['last_name']
+            time_zone = data['about_me']['timeSettings']["timeZone"]
+            # ta_id = data["ta_id"]
+
+            execute("""UPDATE  users
+                            SET 
+                                first_name = \'""" + first_name + """\'
+                                , last_name =  \'""" + last_name + """\'
+                                , time_zone = \'""" + time_zone + """\'
+                            WHERE email_id = \'""" + email_id + """\' ;""", 'post', conn)
+
+            # userIDResponse = execute("SELECT user_unique_id from users where email = \'""" + email_id + """\' ;""", 'get', conn)
+            # user_id = userIDResponse['result'][0]['email_id']
+
+            # NewRelationIDresponse = execute("Call get_relation_id;", 'get', conn)
+            # NewRelationID = NewRelationIDresponse['result'][0]['new_id']
+
+            # execute("""INSERT INTO relationship
+            #             (id
+            #             , ta_people_id
+            #             , user_id
+            #             , relation_type
+            #             , have_pic
+            #             , picture
+            #             , important)
+            #             VALUES 
+            #             ( \'""" + NewRelationID + """\'
+            #             , \'""" + ta_id + """\'
+            #             , \'""" + user_id + """\'
+            #             , \'""" + 'advisor' + """\'
+            #             , \'""" + 'FALSE' + """\'
+            #             , \'""" + '' + """\'
+            #             , \'""" + '' + """\');""", 'post', conn)
+
+            response['message'] = 'successful'
+            response['result'] = items
+
+            return response, 200
+        except:
+            raise BadRequest('Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
+#User login
 class UserLogin(Resource):
     def get(self, email_id):    
         response = {}
@@ -1667,9 +1915,7 @@ class UserLogin(Resource):
 
         try:
             conn = connect()
-            # data = request.get_json(force=True)
-            # email_id = data['email_id']
-            # password = data['password']
+            
             temp = False
             emails = execute("""SELECT user_unique_id, email_id from users;""", 'get', conn)
             for i in range(len(emails['result'])):
@@ -1706,11 +1952,10 @@ class UserLogin(Resource):
 # Run on below IP address and port
 # Make sure port number is unused (i.e. don't use numbers 0-1023)
 
-api.add_resource(Routines, '/api/v2/getgoalsandroutines', '/api/v2/getgoalsandroutines/<string:user_id>')
-api.add_resource(Goals, '/api/v2/getgoalsandroutines', '/api/v2/getgoals/<string:user_id>')
+api.add_resource(GoalsRoutines, '/api/v2/getgoalsandroutines', '/api/v2/getgoalsandroutines/<string:user_id>')
 api.add_resource(AboutMe, '/api/v2/aboutme', '/api/v2/aboutme/<string:user_id>')
 api.add_resource(ListAllTA, '/api/v2/listAllTA', '/api/v2/listAllTA/<string:user_id>')
-api.add_resource(AnotherTAAccess, '/api/v2/anotherTA')
+api.add_resource(AnotherTAAccess, '/api/v2/anotherTAAccess')
 api.add_resource(ImportantPeople, '/api/v2/listImportantPeople', '/api/v2/listImportantPeople/<string:user_id>')
 api.add_resource(addNewAT, '/api/v2/addAT')
 api.add_resource(addNewGR, '/api/v2/addGR')
@@ -1731,7 +1976,7 @@ api.add_resource(SocialLogin, '/api/v2/loginSocialTA/<string:email_id>')
 api.add_resource(CreateNewUser, '/api/v2/addNewUser')
 api.add_resource(UpdateNewUser, '/api/v2/updateNewUser')
 api.add_resource(UserLogin, '/api/v2/userLogin/<string:email_id>')
-
+api.add_resource(UpdateNameTimeZone, '/api/v2/updateNameTimeZone/<string:email_id>')
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=2000)
