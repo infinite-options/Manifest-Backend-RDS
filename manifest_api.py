@@ -135,6 +135,7 @@ def execute(sql, cmd, conn, skipSerialization=False):
                 response['result'] = result
             elif cmd == 'post':
                 conn.commit()
+                print("P")
                 response['message'] = 'Successfully committed SQL command.'
                 # Return status code of 281 for successful POST request
                 response['code'] = 281
@@ -239,7 +240,7 @@ class AboutMe(Resource):
 
 # returns all users of a TA
 class AllUsers(Resource):
-    def get(self, ta_id = None):
+    def get(self, email_id = None):
         response = {}
         items = {}
 
@@ -249,22 +250,27 @@ class AllUsers(Resource):
             
             # All users of a TA
         
-            query = """SELECT CONCAT(first_name, SPACE(1), last_name) as user_name
-                            , user_unique_id
-                        
+            query = """SELECT user_unique_id
+                            , CONCAT(users.first_name, SPACE(1), users.last_name) as user_name
+                            , users.email_id
+                            , users.picture
+                            , time_zone
                         FROM
                         users
                         JOIN
                         relationship r
                         ON users.user_unique_id = r.user_id
-                        WHERE relation_type ='advisor' and ta_people_id = \'""" + ta_id + """\';"""
+                        JOIN ta_people ta
+                        ON r.ta_people_id = ta.unique_id
+                        WHERE relation_type ='advisor' and ta.email_id = \'""" + email_id + """\';"""
             
             items = execute(query, 'get', conn)
 
                 # Load all the results as a list of dictionaries
 
             response['message'] = 'successful'
-            response['result'] = items
+            response['result'] = items['result']
+        
 
             return response, 200
         except:
@@ -1388,7 +1394,7 @@ class CreateNewPeople(Resource):
         try:
             conn = connect()
             data = request.get_json(force=True)
-            user_id = data['user_id']
+            email = data['user_email']
             email_id = data['email_id']
             first_name = data['first_name']
             last_name = data['last_name']
@@ -1396,7 +1402,7 @@ class CreateNewPeople(Resource):
             phone_number = data['phone_number']
             picture = data['picture']
             ta_people_type = 'people'
-            important = 'TRUE'
+            important = 'False'
             email_list = []
             if picture != '':
                 have_pic = 'TRUE'
@@ -1410,6 +1416,9 @@ class CreateNewPeople(Resource):
             query.append("""SELECT email_id FROM ta_people;""")
             peopleResponse = execute(query[1], 'get', conn)
             email_list = []
+
+            userIDResponse = execute("SELECT user_unique_id from users where email_id = \'""" + email + """\';""", 'get', conn)
+            user_id = userIDResponse['result'][0]['user_unique_id']
 
             for i in range(len(peopleResponse['result'])):
                 email_id_existing = peopleResponse['result'][i]['email_id']
@@ -1780,7 +1789,7 @@ class CreateNewUser(Resource):
             disconnect(conn)
 
 # Update new user
-class UpdateNewUser(Resource):
+class UpdateAboutMe(Resource):
     def post(self):    
         response = {}
         items = {}
@@ -1788,21 +1797,32 @@ class UpdateNewUser(Resource):
         try:
             conn = connect()
             data = request.get_json(force=True)
+
+            people_id = []
+            people_have_pic = []
+            people_name = []
+            people_pic = []
+            people_relationship = []
             email_id = data['email_id']
             first_name = data['first_name']
             last_name = data['last_name']
-            have_pic = data['about_me']['have_pic']
-            message_card = data['about_me']['have_pic']
-            message_day = data['about_me']['have_pic']
-            picture = data['about_me']['pic']
-            afternoon_time = data['about_me']['timeSettings']["afternoon"]
-            day_end = data['about_me']['timeSettings']["dayEnd"]
-            day_start = data['about_me']['timeSettings']["dayStart"]
-            evening_time = data['about_me']['timeSettings']["evening"]
-            morning_time = data['about_me']['timeSettings']["morning"]
-            night_time = data['about_me']['timeSettings']["night"]
-            time_zone = data['about_me']['timeSettings']["timeZone"]
-            ta_id = data["ta_id"]
+            have_pic = data['have_pic']
+            message_card = data['message_card']
+            message_day = data['message_day']
+            picture = data['picture']
+            for i in range(len(data['people'])):
+                people_id.append(data['people'][i]['people_id'])
+                people_name.append(data['people'][i]['name'])
+                people_relationship.append(data['people'][i]['relationship'])
+                people_have_pic.append(data['people'][i]['have_pic'])
+                people_pic.append(data['people'][i]['picture'])
+            afternoon_time = data['timeSettings']["afternoon"]
+            day_end = data['timeSettings']["dayEnd"]
+            day_start = data['timeSettings']["dayStart"]
+            evening_time = data['timeSettings']["evening"]
+            morning_time = data['timeSettings']["morning"]
+            night_time = data['timeSettings']["night"]
+            time_zone = data['timeSettings']["timeZone"]
 
             execute("""UPDATE  users
                             SET 
@@ -1821,29 +1841,53 @@ class UpdateNewUser(Resource):
                                 , day_end = \'""" + day_end + """\'
                             WHERE email_id = \'""" + email_id + """\' ;""", 'post', conn)
 
-            userIDResponse = execute("SELECT user_unique_id from users where email = \'""" + email_id + """\' ;""", 'get', conn)
-            user_id = userIDResponse['result'][0]['email_id']
+            userIDResponse = execute("SELECT user_unique_id from users where email_id = \'""" + email_id + """\';""", 'get', conn)
+            user_id = userIDResponse['result'][0]['user_unique_id']
 
-            NewRelationIDresponse = execute("Call get_relation_id;", 'get', conn)
-            NewRelationID = NewRelationIDresponse['result'][0]['new_id']
+            for i in range(len(people_id)):
+                temp = True
+    
+                relationResponse = execute("""SELECT relation_type FROM relationship 
+                            WHERE ta_people_id = \'""" + people_id[i] + """\' 
+                            and user_id = \'""" + user_id + """\';""", 'get', conn)
+                
+                for r in range(len(relationResponse['result'])):
 
-            execute("""INSERT INTO relationship
-                        (id
-                        , ta_people_id
-                        , user_id
-                        , relation_type
-                        , have_pic
-                        , picture
-                        , important)
-                        VALUES 
-                        ( \'""" + NewRelationID + """\'
-                        , \'""" + ta_id + """\'
-                        , \'""" + user_id + """\'
-                        , \'""" + 'advisor' + """\'
-                        , \'""" + 'FALSE' + """\'
-                        , \'""" + '' + """\'
-                        , \'""" + '' + """\');""", 'post', conn)
+                    if relationResponse['result'][r]['relation_type'] != 'advisor':
+                        temp = False
+                        items = execute("""UPDATE  relationship
+                            SET 
+                                relation_type = \'""" + people_relationship[i] + """\'
+                                , have_pic =  \'""" + people_have_pic[i] + """\'
+                                , picture = \'""" + people_pic[i] + """\'
+                                , important = \'""" + 'True' + """\'
+                            WHERE ta_people_id = \' """ + people_id[i] + """\' 
+                            and user_id = \' """ + user_id + """\';""", 'post', conn)
+                        print("people_updated")
 
+                if temp == True:
+                    query = ["Call get_relation_id;"]
+                    NewRealtionIDresponse = execute(query[0], 'get', conn)
+                    NewRealtionID = NewRealtionIDresponse['result'][0]['new_id']
+                    print(NewRealtionID)
+                    execute("""INSERT INTO relationship
+                                        (id
+                                        , ta_people_id
+                                        , user_id
+                                        , relation_type
+                                        , have_pic
+                                        , picture
+                                        , important)
+                                        VALUES 
+                                        ( \'""" + NewRealtionID + """\'
+                                        , \'""" + people_id[i] + """\'
+                                        , \'""" + user_id + """\'
+                                        , \'""" + people_relationship[i] + """\'
+                                        , \'""" + people_have_pic[i] + """\'
+                                        , \'""" + people_pic[i] + """\'
+                                        , \'""" + 'True' + """\');""", 'post', conn)
+                    print("relation added")
+            
             response['message'] = 'successful'
             response['result'] = items
 
@@ -1862,41 +1906,45 @@ class UpdateNameTimeZone(Resource):
         try:
             conn = connect()
             data = request.get_json(force=True)
-            email_id = data['email_id']
+            ta_id = data["ta_email"]
+            email_id = data['email']
             first_name = data['first_name']
             last_name = data['last_name']
-            time_zone = data['about_me']['timeSettings']["timeZone"]
-            # ta_id = data["ta_id"]
-
-            execute("""UPDATE  users
+            time_zone = data["timeZone"]
+            print(email_id)
+            items = execute("""UPDATE  users
                             SET 
                                 first_name = \'""" + first_name + """\'
                                 , last_name =  \'""" + last_name + """\'
                                 , time_zone = \'""" + time_zone + """\'
                             WHERE email_id = \'""" + email_id + """\' ;""", 'post', conn)
+            
+            userIDResponse = execute("SELECT user_unique_id from users where email_id = \'""" + email_id + """\';""", 'get', conn)
+            print(userIDResponse)
+            user_id = userIDResponse['result'][0]['user_unique_id']
+            print(user_id)
+            NewRelationIDresponse = execute("Call get_relation_id;", 'get', conn)
+            NewRelationID = NewRelationIDresponse['result'][0]['new_id']
 
-            # userIDResponse = execute("SELECT user_unique_id from users where email = \'""" + email_id + """\' ;""", 'get', conn)
-            # user_id = userIDResponse['result'][0]['email_id']
-
-            # NewRelationIDresponse = execute("Call get_relation_id;", 'get', conn)
-            # NewRelationID = NewRelationIDresponse['result'][0]['new_id']
-
-            # execute("""INSERT INTO relationship
-            #             (id
-            #             , ta_people_id
-            #             , user_id
-            #             , relation_type
-            #             , have_pic
-            #             , picture
-            #             , important)
-            #             VALUES 
-            #             ( \'""" + NewRelationID + """\'
-            #             , \'""" + ta_id + """\'
-            #             , \'""" + user_id + """\'
-            #             , \'""" + 'advisor' + """\'
-            #             , \'""" + 'FALSE' + """\'
-            #             , \'""" + '' + """\'
-            #             , \'""" + '' + """\');""", 'post', conn)
+            TAIDResponse = execute("""SELECT unique_id from ta_people where email_id = \'""" + ta_id + """\';""", 'get', conn)
+            ta_unique_id = TAIDResponse['result'][0]['unique_id']
+            print(ta_unique_id)
+            execute("""INSERT INTO relationship
+                        (id
+                        , ta_people_id
+                        , user_id
+                        , relation_type
+                        , have_pic
+                        , picture
+                        , important)
+                        VALUES 
+                        ( \'""" + NewRelationID + """\'
+                        , \'""" + ta_unique_id + """\'
+                        , \'""" + user_id + """\'
+                        , \'""" + 'advisor' + """\'
+                        , \'""" + 'FALSE' + """\'
+                        , \'""" + '' + """\'
+                        , \'""" + '' + """\');""", 'post', conn)
 
             response['message'] = 'successful'
             response['result'] = items
@@ -1969,14 +2017,14 @@ api.add_resource(DeletePeople, '/api/v2/deletePeople')
 api.add_resource(UpdateTime, '/api/v2/updateTime/<user_id>')
 api.add_resource(NewTA, '/api/v2/addNewTA')
 api.add_resource(TASocialSignUP, '/api/v2/addNewSocialTA')
-api.add_resource(AllUsers, '/api/v2/usersOfTA/<string:ta_id>')
+api.add_resource(AllUsers, '/api/v2/usersOfTA/<string:email_id>')
 # api.add_resource(TALogin, '/api/v2/loginTA?email_id=<string:email_id>&password=<password>')
 api.add_resource(TALogin, '/api/v2/loginTA/<string:email_id>/<string:password>')
 api.add_resource(SocialLogin, '/api/v2/loginSocialTA/<string:email_id>')
 api.add_resource(CreateNewUser, '/api/v2/addNewUser')
-api.add_resource(UpdateNewUser, '/api/v2/updateNewUser')
+api.add_resource(UpdateAboutMe, '/api/v2/updateAboutMe')
 api.add_resource(UserLogin, '/api/v2/userLogin/<string:email_id>')
-api.add_resource(UpdateNameTimeZone, '/api/v2/updateNameTimeZone/<string:email_id>')
+api.add_resource(UpdateNameTimeZone, '/api/v2/updateNewUser')
 
 if __name__ == '__main__':
-    app.run(host='127.0.0.1', port=2000)
+    app.run(host='127.0.0.1', port=4000)
