@@ -4,7 +4,7 @@ from flask_mail import Mail, Message  # used for email
 # used for serializer email and error handling
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadTimeSignature
 from flask_cors import CORS
-
+import boto3, botocore
 
 from werkzeug.exceptions import BadRequest, NotFound
 
@@ -32,13 +32,16 @@ import stripe
 import binascii
 from datetime import datetime
 import datetime as dt
+from env_file import RDS_PW, S3_BUCKET, S3_KEY, S3_SECRET_ACCESS_KEY
 
 # RDS for AWS SQL 8.0
 RDS_HOST = 'io-mysqldb8.cxjnrciilyjq.us-west-1.rds.amazonaws.com'
 RDS_PORT = 3306
 RDS_USER = 'admin'
 RDS_DB = 'manifest'
-RDS_PW = 'prashant'
+s3 = boto3.client('s3')
+ALLOWED_EXTENSIONS = set(['png', 'jpg', 'jpeg'])
+
 
 app = Flask(__name__)
 cors = CORS(app, resources={r'/api/*': {'origins': '*'}})
@@ -150,7 +153,26 @@ def execute(sql, cmd, conn, skipSerialization=False):
         # response['sql'] = sql
         return response
 
-# Returns Routines
+# def helper_upload_meal_images(file, bucket, key):
+       
+#     filename = 'https://s3-us-west-1.amazonaws.com/' \
+#             + str(bucket) + '/' + str(key)
+#     print(filename)
+#     upload_file = s3.put_object(
+#                         Bucket=bucket,
+#                         Body=file,
+#                         Key=key,
+#                         ACL='public-read',
+#                         ContentType='image/jpeg'
+#                     )
+#     return filename
+
+# def allowed_file(filename):
+#     """Checks if the file is allowed to upload"""
+#     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+# Returns Goals and Routines
 class GoalsRoutines(Resource):
     def get(self, user_id = None):
         response = {}
@@ -158,7 +180,6 @@ class GoalsRoutines(Resource):
         try:
 
             conn = connect()
-            query = None
             data = request.json
             query = None
 
@@ -171,6 +192,32 @@ class GoalsRoutines(Resource):
             else:
                 query = """SELECT * FROM goals_routines WHERE 
                              user_id = \'""" +user_id+ """\';"""
+            items = execute(query,'get', conn)
+            # file = "/Users/rohan/Downloads/Sunny Beach Traceable 1.jpg"
+            # helper_upload_meal_images(file, S3_BUCKET, "p")
+
+            response['message'] = 'successful'
+            response['result'] = items['result']
+
+            return response, 200
+        except:
+            raise BadRequest('Get Routines Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
+# Returns Actions and Tasks
+class ActionsTasks(Resource):
+    def get(self, goal_routine_id = None):
+        response = {}
+        items = {}
+        try:
+
+            conn = connect()
+            data = request.json
+            query = None
+
+            query = """SELECT * FROM actions_tasks WHERE 
+                             goal_routine_id = \'""" +goal_routine_id+ """\';"""
             items = execute(query,'get', conn)
 
 
@@ -212,65 +259,56 @@ class AboutMe(Resource):
             # About me information of a particular users
             else:
                 query = """SELECT ta_people_id
-                                    , r.have_pic
-                                    , r.picture
-                                    , important
-                                    , user_id
-                                    , relation_type
-                                    FROM
+                                , ta_email_id AS email_id
+                                , people_name
+                                , ta_have_pic AS have_pic
+                                , ta_picture AS picture
+                                , important
+                                , user_unique_id
+                                , relation_type
+                                FROM
                             users
                             LEFT JOIN
-                                (SELECT ta_people_id
-                                    , have_pic
-                                    , picture
-                                    , important
-                                    , user_id
-                                    , relation_type
-                                FROM relationship
-                                WHERE relation_type!='advisor') r
-                            ON users.user_unique_id = r.user_id
-                            WHERE user_id = \'""" +user_id+ """\';"""
+                            (SELECT ta_people_id
+                                , ta_email_id
+                                , CONCAT(ta_first_name, SPACE(1), ta_last_name) as people_name
+                                , ta_have_pic
+                                , ta_picture
+                                , important
+                                , user_uid
+                                , relation_type
+                            FROM relationship
+                            JOIN ta_people
+                            ON ta_people_id = ta_unique_id
+                            WHERE relation_type!='advisor' and important = 'True') r
+                            ON user_unique_id = r.user_uid
+                            WHERE user_unique_id =  \'""" +user_id+ """\';"""
 
-            items = execute("""SELECT 
-                                have_pic
-                                , message_card
-                                , message_day
-                                , picture
-                                , first_name
-                                , last_name
-                                , email_id
-                                , evening_time
-                                , morning_time
-                                , afternoon_time
-                                , night_time
-                                , day_end
-                                , day_start
-                                , time_zone
-                            FROM users
-                        WHERE user_unique_id = \'""" +user_id+ """\';""", 'get', conn)
             items1 = execute(query, 'get', conn)
-            # newList = {}
-            # newList['have_pic'] = items['result'][0]['have_pic']
-            # # newList.append(items['result'][0]['message_card'])
-            # # newList.append(items['result'][0]['message_day'])
-            # # newList.append(items['result'][0]['picture'])
-            # # newList.append(items['result'][0]['evening_time'])
-            # # newList.append(items['result'][0]['morning_time'])
-            # # newList.append(items['result'][0]['afternoon_time'])
-            # # newList.append(items['result'][0]['night_time'])
-            # # newList.append(items['result'][0]['day_end'])
-            # # newList.append(items['result'][0]['day_start'])
-            # # newList.append(items['result'][0]['time_zone'])
-            # # newList.append(items['result'][0]['first_name'])
-            # # newList.append(items['result'][0]['last_name'])
-            # # newList.append(items['result'][0]['email_id'])
 
+            items = execute("""SELECT user_have_pic
+                                    , message_card
+                                    , message_day
+                                    , user_picture
+                                    , user_first_name
+                                    , user_last_name
+                                    , user_email_id
+                                    , evening_time
+                                    , morning_time
+                                    , afternoon_time
+                                    , night_time
+                                    , day_end
+                                    , day_start
+                                    , time_zone
+                                FROM users
+                            WHERE user_unique_id = \'""" +user_id+ """\';""", 'get', conn)
 
             if len(items1['result']) > 0:
                 response['result'] = items['result'] + items1['result']
             else:
                 items1['result'] = [{ "important_people" : "no important people"}]
                 response['result'] = items['result'] + items1['result']
+            
             response['message'] = 'successful'
 
             return response, 200
@@ -292,22 +330,20 @@ class AllUsers(Resource):
             # All users of a TA
         
             query = """SELECT user_unique_id
-                            , CONCAT(users.first_name, SPACE(1), users.last_name) as user_name
-                            , users.email_id
-                            , users.picture
+                            , CONCAT(user_first_name, SPACE(1), user_last_name) as user_name
+                            , user_email_id
+                            , user_picture
                             , time_zone
                         FROM
                         users
                         JOIN
-                        relationship r
-                        ON users.user_unique_id = r.user_id
-                        JOIN ta_people ta
-                        ON r.ta_people_id = ta.unique_id
-                        WHERE relation_type ='advisor' and ta.email_id = \'""" + email_id + """\';"""
+                        relationship
+                        ON user_unique_id = user_uid
+                        JOIN ta_people
+                        ON ta_people_id = ta_unique_id
+                        WHERE relation_type = 'advisor' and ta_email_id = \'""" + email_id + """\';"""
             
             items = execute(query, 'get', conn)
-
-                # Load all the results as a list of dictionaries
 
             response['message'] = 'successful'
             response['result'] = items['result']
@@ -338,22 +374,22 @@ class ListAllTA(Resource):
                             WHERE type = 'trusted_advisor';"""
                 
             else:
-                query = """SELECT DISTINCT unique_id
-                            , CONCAT(first_name, SPACE(1), last_name) as name
-                            , first_name
-                            , last_name
+                query = """ SELECT DISTINCT ta_unique_id
+                                    , CONCAT(ta_first_name, SPACE(1), ta_last_name) as name
+                                    , ta_first_name
+                                    , ta_last_name
                             FROM ta_people
-                            JOIN relationship on unique_id = ta_people_id
-                            WHERE user_id = \'""" + user_id + """\'
-                            and type = 'trusted_advisor'"""
+                            JOIN relationship on ta_unique_id = ta_people_id
+                            WHERE user_uid = \'""" +user_id+ """\'
+                            and relation_type = 'advisor';"""
 
-                query2 = """SELECT DISTINCT unique_id
-                            , CONCAT(first_name, SPACE(1), last_name) as name
-                            , first_name
-                            , last_name
+                query2 = """SELECT DISTINCT ta_unique_id
+                                    , CONCAT(ta_first_name, SPACE(1), ta_last_name) as name
+                                    , ta_first_name
+                                    , ta_last_name
                             FROM ta_people
-                            JOIN relationship on unique_id = ta_people_id
-                            WHERE type = 'trusted_advisor'"""
+                            JOIN relationship on ta_unique_id = ta_people_id
+                            WHERE relation_type = 'advisor';"""
 
             idTAResponse = execute(query, 'get', conn)
             allTAResponse = execute(query2, 'get', conn)
@@ -362,10 +398,10 @@ class ListAllTA(Resource):
             final_list = []
 
             for i in range(len(idTAResponse['result'])):
-                list.append(idTAResponse['result'][i]['unique_id'])
+                list.append(idTAResponse['result'][i]['ta_unique_id'])
 
             for i in range(len(allTAResponse['result'])):
-                if allTAResponse['result'][i]['unique_id'] not in list:
+                if allTAResponse['result'][i]['ta_unique_id'] not in list:
                     final_list.append(allTAResponse['result'][i])
 
             response['message'] = 'successful'
@@ -385,33 +421,36 @@ class AnotherTAAccess(Resource):
 
         try:
             conn = connect()
+
             data = request.get_json(force=True)
-            ts = dt.datetime.now()
+
+            timestamp = getNow()
 
             ta_id = data['ta_people_id']
             user_id = data['user_id']
+
             query = ["Call get_relation_id;"]
-            NewRealtionIDresponse = execute(query[0], 'get', conn)
-            NewRealtionID = NewRealtionIDresponse['result'][0]['new_id']
+            new_relation_id_response = execute(query[0], 'get', conn)
+            new_relation_id = new_relation_id_response['result'][0]['new_id']
 
             query.append("""INSERT INTO relationship
-                        (id
-                        , timestamp
-                        , ta_people_id
-                        , user_id
-                        , relation_type
-                        , have_pic
-                        , picture
-                        , important)
-                        VALUES 
-                        ( \'""" + NewRealtionID + """\'
-                        , \'""" + str(ts) + """\'
-                        , \'""" + ta_id + """\'
-                        , \'""" + user_id + """\'
-                        , \'""" + 'advisor' + """\'
-                        , \'""" + 'FALSE' + """\'
-                        , \'""" + '' + """\'
-                        , \'""" + '' + """\');""")
+                                        (id
+                                        , r_timestamp
+                                        , ta_people_id
+                                        , user_uid
+                                        , relation_type
+                                        , ta_have_pic
+                                        , ta_picture
+                                        , important)
+                            VALUES 
+                                        ( \'""" + str(new_relation_id) + """\'
+                                        , \'""" + str(timestamp) + """\'
+                                        , \'""" + str(ta_id) + """\'
+                                        , \'""" + str(user_id) + """\'
+                                        , \'""" + 'advisor' + """\'
+                                        , \'""" + 'FALSE' + """\'
+                                        , \'""" + '' + """\'
+                                        , \'""" + '' + """\');""")
             items = execute(query[1], 'post', conn)
 
                 # Load all the results as a list of dictionaries
@@ -425,8 +464,8 @@ class AnotherTAAccess(Resource):
         finally:
             disconnect(conn)
 
-# Returns Important People data of a user
-class ImportantPeople(Resource):
+# Returns ALl People of a user
+class ListAllPeople(Resource):
     def get(self, user_id = None):
         response = {}
         items = {}
@@ -453,21 +492,22 @@ class ImportantPeople(Resource):
                             JOIN users u on r.user_id = u.user_unique_id
                             WHERE (type = 'people' or type = 'both') and relation_type != 'advisor';"""
             else:
-                query = """SELECT user_id
-                                , CONCAT(u.first_name, SPACE(1), u.last_name) as user_name
+                query = """SELECT user_uid
+                                , CONCAT(user_first_name, SPACE(1), user_last_name) as user_name
                                 , ta_people_id
-                                , ta.first_name as people_first_name
-                                , ta.last_name as people_last_name
-                                , ta.phone_number
-                                , r.have_pic
-                                , r.picture
-                                , r.important
-                            FROM relationship r
+                                , ta_email_id as email
+                                , user_have_pic as have_pic
+                                , important as important
+                                , CONCAT(ta_first_name, SPACE(1), ta_last_name) as name
+                                , ta_phone_number as phone_number
+                                , ta_picture as pic
+                                , relation_type as relationship
+                            FROM relationship
                             JOIN
                             ta_people ta
-                            ON r.ta_people_id = ta.unique_id
-                            JOIN users u on r.user_id = u.user_unique_id
-                            WHERE (type = 'people' or type = 'both') and relation_type != 'advisor' and user_id = \'""" + user_id+  """\';"""
+                            ON ta_people_id = ta_unique_id
+                            JOIN users on user_uid = user_unique_id
+                            WHERE relation_type != 'advisor' and user_uid = \'""" + user_id+  """\';"""
             
             items = execute(query,'get', conn)
                 # Load all the results as a list of dictionaries
@@ -482,7 +522,7 @@ class ImportantPeople(Resource):
             disconnect(conn)
 
 # Add new Goal/Routine of a user
-class addNewGR(Resource):
+class AddNewGR(Resource):
     def post(self):    
         response = {}
         items = {}
@@ -540,8 +580,8 @@ class addNewGR(Resource):
 
             # New Goal/Routine ID
             query = ["CALL get_gr_id;"]
-            NewGRIDresponse = execute(query[0],  'get', conn)
-            NewGRID = NewGRIDresponse['result'][0]['new_id']
+            new_gr_id_response = execute(query[0],  'get', conn)
+            new_gr_id = new_gr_id_response['result'][0]['new_id']
 
             # Add G/R to database
             query.append("""INSERT INTO goals_routines(gr_unique_id
@@ -568,35 +608,35 @@ class addNewGR(Resource):
                             , end_day_and_time
                             , expected_completion_time)
                         VALUES 
-                        ( \'""" + NewGRID + """\'
-                        , \'""" + gr_title + """\'
-                        , \'""" + user_id + """\'
-                        , \'""" + is_available + """\'
+                        ( \'""" + str(new_gr_id) + """\'
+                        , \'""" + str(gr_title) + """\'
+                        , \'""" + str(user_id) + """\'
+                        , \'""" + str(is_available) + """\'
                         , \'""" + 'FALSE' + """\'
                         , \'""" + 'FALSE' + """\'
-                        , \'""" + is_displayed_today + """\'
-                        , \'""" + is_persistent + """\'
-                        , \'""" + is_sublist_available + """\'
-                        , \'""" + is_timed + """\'
-                        , \'""" + photo + """\'
-                        , \'""" + repeat + """\'
-                        , \'""" + repeat_ends + """\'
-                        , \'""" + repeat_ends_on + """\'
-                        , \'""" + repeat_every + """\'
-                        , \'""" + repeat_frequency + """\'
-                        , \'""" + repeat_occurences + """\'
-                        , \'""" + start_day_and_time + """\'
-                        , \'""" + repeat_week_days + """\'
-                        , \'""" + datetime_completed + """\'
-                        , \'""" + datetime_started + """\'
-                        , \'""" + end_day_and_time + """\'
-                        , \'""" + expected_completion_time + """\');""")
+                        , \'""" + str(is_displayed_today) + """\'
+                        , \'""" + str(is_persistent) + """\'
+                        , \'""" + str(is_sublist_available) + """\'
+                        , \'""" + str(is_timed) + """\'
+                        , \'""" + str(photo) + """\'
+                        , \'""" + str(repeat) + """\'
+                        , \'""" + str(repeat_ends) + """\'
+                        , \'""" + str(repeat_ends_on) + """\'
+                        , \'""" + str(repeat_every) + """\'
+                        , \'""" + str(repeat_frequency) + """\'
+                        , \'""" + str(repeat_occurences) + """\'
+                        , \'""" + str(start_day_and_time) + """\'
+                        , \'""" + str(repeat_week_days) + """\'
+                        , \'""" + str(datetime_completed) + """\'
+                        , \'""" + str(datetime_started) + """\'
+                        , \'""" + str(end_day_and_time) + """\'
+                        , \'""" + str(expected_completion_time) + """\');""")
 
             execute(query[1], 'post', conn)
 
             # New Notification ID
-            NewNotificationIDresponse = execute("CALL get_notification_id;",  'get', conn)
-            NewNotificationID = NewNotificationIDresponse['result'][0]['new_id']
+            new_notification_id_response = execute("CALL get_notification_id;",  'get', conn)
+            new_notfication_id = new_notification_id_response['result'][0]['new_id']
 
             # TA notfication
             query.append("""Insert into notifications
@@ -616,9 +656,9 @@ class addNewGR(Resource):
                                     , after_message
                                     , after_time) 
                                 VALUES
-                                (     \'""" + NewNotificationID + """\'
+                                (     \'""" + new_notfication_id + """\'
                                     , \'""" + ta_id + """\'
-                                    , \'""" + NewGRID + """\'
+                                    , \'""" + new_gr_id + """\'
                                     , \'""" + ta_before_is_enable + """\'
                                     , \'""" + ta_before_is_set + """\'
                                     , \'""" + ta_before_message + """\'
@@ -683,7 +723,7 @@ class addNewGR(Resource):
             disconnect(conn)
 
 
-class addNewAT(Resource):
+class AddNewAT(Resource):
     def post(self):    
         response = {}
         items = {}
@@ -1461,7 +1501,7 @@ class CreateNewPeople(Resource):
             conn = connect()
             ts  = dt.datetime.now()
             data = request.get_json(force=True)
-            email = data['user_email']
+            user_id = data['user_id']
             email_id = data['email_id']
             first_name = data['first_name']
             last_name = data['last_name']
@@ -1477,62 +1517,77 @@ class CreateNewPeople(Resource):
             else:
                 have_pic = 'FALSE'
 
+            name = []
+            name = first_name.split()
+            first_name = name[0]
+            last_name = name[1]
+
             query = ["Call get_relation_id;"]
             NewRelationIDresponse = execute(query[0], 'get', conn)
             NewRelationID = NewRelationIDresponse['result'][0]['new_id']
 
-            query.append("""SELECT email_id FROM ta_people;""")
+            query.append("""SELECT ta_email_id FROM ta_people;""")
             peopleResponse = execute(query[1], 'get', conn)
             email_list = []
 
-            userIDResponse = execute("SELECT user_unique_id from users where email_id = \'""" + email + """\';""", 'get', conn)
-            user_id = userIDResponse['result'][0]['user_unique_id']
+            # userIDResponse = execute("SELECT user_unique_id from users where email_id = \'""" + email + """\';""", 'get', conn)
+            # user_id = userIDResponse['result'][0]['user_unique_id']
 
             for i in range(len(peopleResponse['result'])):
-                email_id_existing = peopleResponse['result'][i]['email_id']
+                email_id_existing = peopleResponse['result'][i]['ta_email_id']
                 email_list.append(email_id_existing)
 
             if email_id in email_list:
-                typeResponse = execute("""SELECT type, unique_id from ta_people WHERE email_id = \'""" + email_id + """\';""", 'get', conn)
-                if typeResponse['result'][0]['type'] == 'trusted_advisor':
-                    execute("""UPDATE ta_people
-                                SET type = 'both'
-                                WHERE email_id = \'""" + email_id + """\';""", 'post', conn)
-
-                    execute("""INSERT INTO relationship(
-                        id
-                        , timestamp
-                        , ta_people_id
-                        , user_id
-                        , relation_type
-                        , have_pic
-                        , picture
-                        , important)
-                        VALUES ( 
-                            \'""" + NewRelationID + """\'
-                            , \'""" + str(ts) + """\'
-                            , \'""" + typeResponse['result'][0]['unique_id'] + """\'
-                            , \'""" + user_id + """\'
-                            , \'""" + relation_type + """\'
-                            , \'""" + have_pic + """\'
-                            , \'""" + picture + """\'
-                            , \'""" + important + """\')""", 'post', conn)
-
-                elif typeResponse['result'][0]['type'] == 'both' or typeResponse['result'][0]['type'] == 'people':
-                    response['result'] = 'People already exists for current user'
+                typeResponse = execute("""SELECT ta_unique_id from ta_people WHERE ta_email_id = \'""" + email_id + """\';""", 'get', conn)
+               
+                execute("""INSERT INTO relationship(
+                    id
+                    , r.timestamp
+                    , ta_people_id
+                    , user_uid
+                    , relation_type
+                    , ta_have_pic
+                    , ta_picture
+                    , important)
+                    VALUES ( 
+                        \'""" + NewRelationID + """\'
+                        , \'""" + str(ts) + """\'
+                        , \'""" + typeResponse['result'][0]['unique_id'] + """\'
+                        , \'""" + user_id + """\'
+                        , \'""" + relation_type + """\'
+                        , \'""" + have_pic + """\'
+                        , \'""" + picture + """\'
+                        , \'""" + important + """\')""", 'post', conn)
 
             else:
                 NewPeopleIDresponse = execute("CALL get_ta_people_id;", 'get', conn)
                 NewPeopleID = NewPeopleIDresponse['result'][0]['new_id']
+                print(NewPeopleID)
+                execute("""INSERT INTO ta_people(
+                                        ta_unique_id
+                                        , ta_email_id
+                                        , ta_first_name
+                                        , ta_last_name
+                                        , employer
+                                        , password_hashed
+                                        , ta_phone_number)
+                                        VALUES ( 
+                                            \'""" + NewPeopleID + """\'
+                                            , \'""" + email_id + """\'
+                                            , \'""" + first_name + """\'
+                                            , \'""" + last_name + """\'
+                                            , \'""" + employer + """\'
+                                            , \'""" + '' + """\'
+                                            , \'""" + phone_number + """\')""", 'post', conn)
 
                 execute("""INSERT INTO relationship(
                                         id
-                                        , timestamp
+                                        , r_timestamp
                                         , ta_people_id
-                                        , user_id
+                                        , user_uid
                                         , relation_type
-                                        , have_pic
-                                        , picture
+                                        , ta_have_pic
+                                        , ta_picture
                                         , important)
                                         VALUES ( 
                                             \'""" + NewRelationID + """\'
@@ -1544,25 +1599,6 @@ class CreateNewPeople(Resource):
                                             , \'""" + picture + """\'
                                             , \'""" + important + """\')""", 'post', conn)
 
-
-                execute("""INSERT INTO ta_people(
-                                        unique_id
-                                        , email_id
-                                        , first_name
-                                        , last_name
-                                        , employer
-                                        , password_hashed
-                                        , phone_number
-                                        , type)
-                                        VALUES ( 
-                                            \'""" + NewPeopleID + """\'
-                                            , \'""" + email_id + """\'
-                                            , \'""" + first_name + """\'
-                                            , \'""" + last_name + """\'
-                                            , \'""" + employer + """\'
-                                            , \'""" + '' + """\'
-                                            , \'""" + phone_number + """\'
-                                            , \'""" + ta_people_type + """\')""", 'post', conn)
                 
             response['message'] = 'successful'
 
@@ -1585,9 +1621,9 @@ class DeletePeople(Resource):
             ta_people_id = data['ta_people_id']
             
             
-            execute(""" DELETE FROM relationship
-                                        WHERE user_id = \'""" + user_id + """\' AND
-                                            ta_people_id = \'""" + ta_people_id + """\' ;""", 'post', conn)
+            execute("""DELETE FROM relationship
+                        WHERE user_uid = \'""" + user_id + """\' AND
+                        ta_people_id = \'""" + ta_people_id + """\' ;""", 'post', conn)
         
             response['message'] = 'successful'
             response['result'] = items
@@ -1660,14 +1696,13 @@ class NewTA(Resource):
             NewPeopleID = NewPeopleIDresponse['result'][0]['new_id']
 
             execute("""INSERT INTO ta_people(
-                                        unique_id
-                                        , email_id
-                                        , first_name
-                                        , last_name
+                                        ta_unique_id
+                                        , ta_email_id
+                                        , ta_first_name
+                                        , ta_last_name
                                         , employer
                                         , password_hashed
-                                        , phone_number
-                                        , type)
+                                        , ta_phone_number)                                        
                                         VALUES ( 
                                             \'""" + NewPeopleID + """\'
                                             , \'""" + email_id + """\'
@@ -1675,8 +1710,7 @@ class NewTA(Resource):
                                             , \'""" + last_name + """\'
                                             , \'""" + employer + """\'
                                             , \'""" + key + """\'
-                                            , \'""" + phone_number + """\'
-                                            , \'""" + 'trusted_advisor' + """\')""", 'post', conn)
+                                            , \'""" + phone_number + """\')""", 'post', conn)
             response['message'] = 'successful'
             response['result'] = items
 
@@ -1705,21 +1739,19 @@ class TASocialSignUP(Resource):
             NewPeopleID = NewPeopleIDresponse['result'][0]['new_id']
 
             execute("""INSERT INTO ta_people(
-                                        unique_id
-                                        , email_id
-                                        , first_name
-                                        , last_name
-                                        , employer
-                                        , phone_number
-                                        , type)
+                                            ta_unique_id
+                                            , ta_email_id
+                                            , ta_first_name
+                                            , ta_last_name
+                                            , employer
+                                            , ta_phone_number)
                                         VALUES ( 
                                             \'""" + NewPeopleID + """\'
                                             , \'""" + email_id + """\'
                                             , \'""" + first_name + """\'
                                             , \'""" + last_name + """\'
                                             , \'""" + employer + """\'
-                                            , \'""" + phone_number + """\'
-                                            , \'""" + 'trusted_advisor' + """\')""", 'post', conn)
+                                            , \'""" + phone_number + """\')""", 'post', conn)
             response['message'] = 'successful'
             response['result'] = items
 
@@ -1741,13 +1773,13 @@ class TALogin(Resource):
             # email_id = data['email_id']
             # password = data['password']
             temp = False
-            emails = execute("""SELECT email_id from ta_people;""", 'get', conn)
+            emails = execute("""SELECT ta_email_id from ta_people;""", 'get', conn)
             for i in range(len(emails['result'])):
-                email = emails['result'][i]['email_id']
+                email = emails['result'][i]['ta_email_id']
                 if email == email_id:
                     temp = True
             if temp == True:
-                emailIDResponse = execute("""SELECT password_hashed from ta_people where email_id = \'""" + email_id + """\'""", 'get', conn)
+                emailIDResponse = execute("""SELECT password_hashed from ta_people where ta_email_id = \'""" + email_id + """\'""", 'get', conn)
                 password_storage = emailIDResponse['result'][0]['password_hashed']
 
                 original = bytes.fromhex(password_storage)
@@ -1775,7 +1807,7 @@ class TALogin(Resource):
             disconnect(conn)
 
 # TA social login
-class SocialLogin(Resource):
+class TASocialLogin(Resource):
     def get(self, email_id):    
         response = {}
         items = {}
@@ -1786,9 +1818,9 @@ class SocialLogin(Resource):
             # email_id = data['email_id']
             # password = data['password']
             temp = False
-            emails = execute("""SELECT email_id from ta_people;""", 'get', conn)
+            emails = execute("""SELECT ta_email_id from ta_people;""", 'get', conn)
             for i in range(len(emails['result'])):
-                email = emails['result'][i]['email_id']
+                email = emails['result'][i]['ta_email_id']
                 if email == email_id:
                     temp = True
             if temp == True:
@@ -1824,19 +1856,19 @@ class CreateNewUser(Resource):
             UserIDResponse = execute("CAll get_user_id();", 'get', conn)
             NewUserID = UserIDResponse['result'][0]['new_id']
             temp = False
-            emails = execute("""SELECT email_id from users;""", 'get', conn)
+            emails = execute("""SELECT user_email_id from users;""", 'get', conn)
             for i in range(len(emails['result'])):
-                email = emails['result'][i]['email_id']
+                email = emails['result'][i]['user_email_id']
                 if email == email_id:
                     temp = True
             if temp == False:
                 execute("""INSERT INTO users(
-                                        user_unique_id
-                                        , email_id
-                                        , first_name
-                                        , last_name
-                                        , google_auth_token
-                                        , google_refresh_token)
+                                            user_unique_id
+                                            , user_email_id
+                                            , user_first_name
+                                            , user_last_name
+                                            , google_auth_token
+                                            , google_refresh_token)
                                         VALUES ( 
                                             \'""" + NewUserID + """\'
                                             , \'""" + email_id + """\'
@@ -1847,11 +1879,11 @@ class CreateNewUser(Resource):
             if temp == True:
                  execute("""UPDATE  users
                             SET 
-                                first_name = \'""" + first_name + """\'
-                                , last_name =  \'""" + last_name + """\'
+                                user_first_name = \'""" + first_name + """\'
+                                , user_last_name =  \'""" + last_name + """\'
                                 , google_auth_token = \'""" + google_auth_token + """\'
                                 , google_refresh_token = \'""" + google_refresh_token + """\'
-                            WHERE email_id = \'""" + email_id + """\' ;""", 'post', conn)
+                            WHERE user_email_id = \'""" + email_id + """\' ;""", 'post', conn)
 
             
             response['message'] = 'successful'
@@ -1871,7 +1903,10 @@ class UpdateAboutMe(Resource):
 
         try:
             conn = connect()
+
             data = request.get_json(force=True)
+
+            timestamp = getNow()
 
             people_id = []
             people_have_pic = []
@@ -1879,21 +1914,22 @@ class UpdateAboutMe(Resource):
             people_pic = []
             people_relationship = []
             people_important = []
-
-            email_id = data['email_id']
+            relation_type = []
+            user_id = data['user_id']
             first_name = data['first_name']
             last_name = data['last_name']
             have_pic = data['have_pic']
             message_card = data['message_card']
             message_day = data['message_day']
             picture = data['picture']
-            for i in range(len(data['people'])):
-                people_id.append(data['people'][i]['people_id'])
-                people_name.append(data['people'][i]['name'])
-                people_relationship.append(data['people'][i]['relationship'])
-                people_important.append(data['people'][i]['important'])
-                people_have_pic.append(data['people'][i]['have_pic'])
-                people_pic.append(data['people'][i]['picture'])
+            if len(data['people']) > 0:
+                for i in range(len(data['people'])):
+                    people_id.append(data['people'][i]['ta_people_id'])
+                    people_name.append(data['people'][i]['name'])
+                    people_relationship.append(data['people'][i]['relationship'])
+                    people_important.append(data['people'][i]['important'])
+                    people_have_pic.append(data['people'][i]['have_pic'])
+                    people_pic.append(data['people'][i]['pic'])
             afternoon_time = data['timeSettings']["afternoon"]
             day_end = data['timeSettings']["dayEnd"]
             day_start = data['timeSettings']["dayStart"]
@@ -1904,12 +1940,12 @@ class UpdateAboutMe(Resource):
 
             execute("""UPDATE  users
                             SET 
-                                first_name = \'""" + first_name + """\'
-                                , have_pic = \'""" + have_pic + """\'
-                                , picture = \'""" + picture + """\'
+                                user_first_name = \'""" + first_name + """\'
+                                , user_have_pic = \'""" + have_pic + """\'
+                                , user_picture = \'""" + picture + """\'
                                 , message_card = \'""" + message_card + """\'
                                 , message_day = \'""" + message_day + """\'
-                                , last_name =  \'""" + last_name + """\'
+                                , user_last_name =  \'""" + last_name + """\'
                                 , time_zone = \'""" + time_zone + """\'
                                 , morning_time = \'""" + morning_time + """\'
                                 , afternoon_time = \'""" + afternoon_time + """\'
@@ -1917,54 +1953,86 @@ class UpdateAboutMe(Resource):
                                 , night_time = \'""" + night_time + """\'
                                 , day_start = \'""" + day_start + """\'
                                 , day_end = \'""" + day_end + """\'
-                            WHERE email_id = \'""" + email_id + """\' ;""", 'post', conn)
-
-            userIDResponse = execute("SELECT user_unique_id from users where email_id = \'""" + email_id + """\';""", 'get', conn)
-            user_id = userIDResponse['result'][0]['user_unique_id']
+                            WHERE user_unique_id = \'""" + user_id + """\' ;""", 'post', conn)
 
             for i in range(len(people_id)):
+
                 temp = True
-    
+
                 relationResponse = execute("""SELECT relation_type FROM relationship 
                             WHERE ta_people_id = \'""" + people_id[i] + """\' 
-                            and user_id = \'""" + user_id + """\';""", 'get', conn)
-                
+                            and user_uid = \'""" + user_id + """\';""", 'get', conn)
+
                 for r in range(len(relationResponse['result'])):
+                    relation_type.append(relationResponse['result'][r]['relation_type'])
 
-                    if relationResponse['result'][r]['relation_type'] != 'advisor':
-                        temp = False
-                        items = execute("""UPDATE  relationship
-                            SET 
-                                relation_type = \'""" + people_relationship[i] + """\'
-                                , have_pic =  \'""" + people_have_pic[i] + """\'
-                                , picture = \'""" + people_pic[i] + """\'
-                                , important = \'""" + people_important[i] + """\'
-                            WHERE ta_people_id = \' """ + people_id[i] + """\' 
-                            and user_id = \' """ + user_id + """\';""", 'post', conn)
-                        print("people_updated")
-
-                if temp == True:
-                    query = ["Call get_relation_id;"]
-                    NewRealtionIDresponse = execute(query[0], 'get', conn)
-                    NewRealtionID = NewRealtionIDresponse['result'][0]['new_id']
-                    print(NewRealtionID)
+                if len(relationResponse['result']) == 0:
+                    NewRelationIDresponse = execute("Call get_relation_id;", 'get', conn)
+                    NewRelationID = NewRelationIDresponse['result'][0]['new_id']
+                    print(NewRelationID)
                     execute("""INSERT INTO relationship
                                         (id
                                         , ta_people_id
-                                        , user_id
+                                        , user_uid
+                                        , r_timestamp
                                         , relation_type
-                                        , have_pic
-                                        , picture
+                                        , ta_have_pic
+                                        , ta_picture
                                         , important)
                                         VALUES 
-                                        ( \'""" + NewRealtionID + """\'
+                                        ( \'""" + NewRelationID + """\'
                                         , \'""" + people_id[i] + """\'
                                         , \'""" + user_id + """\'
+                                        , \'""" + timestamp + """\'
                                         , \'""" + people_relationship[i] + """\'
                                         , \'""" + people_have_pic[i] + """\'
                                         , \'""" + people_pic[i] + """\'
                                         , \'""" + people_important[i] + """\');""", 'post', conn)
                     print("relation added")
+
+                for r in range(len(relationResponse['result'])):
+                    relation_type.append(relationResponse['result'][r]['relation_type'])
+                    if relationResponse['result'][r]['relation_type'] != 'advisor':
+                        temp = False
+                        print(temp)
+                        print(people_id[i])
+                        print(relationResponse['result'][r]['relation_type'])
+                        # items = execute("""UPDATE  relationship
+                        #     SET 
+                        #         r_timestamp = \'""" + timestamp + """\'
+                        #         , relation_type = \'""" + people_relationship[i] + """\'
+                        #         , ta_have_pic =  \'""" + people_have_pic[i] + """\'
+                        #         , ta_picture = \'""" + people_pic[i] + """\'
+                        #         , important = \'""" + people_important[i] + """\'
+                        #     WHERE ta_people_id = \'""" + people_id[i] + """\' 
+                        #     and user_uid = \'""" + user_id + """\';""", 'post', conn)
+                        # print(relationResponse['result'][r]['relation_type'])
+                        # print(temp)
+
+                    if temp == True:
+                        query = ["Call get_relation_id;"]
+                        NewRealtionIDresponse = execute(query[0], 'get', conn)
+                        NewRealtionID = NewRealtionIDresponse['result'][0]['new_id']
+                        print(NewRealtionID)
+                        execute("""INSERT INTO relationship
+                                            (id
+                                            , ta_people_id
+                                            , user_uid
+                                            , r_timestamp
+                                            , relation_type
+                                            , ta_have_pic
+                                            , ta_picture
+                                            , important)
+                                            VALUES 
+                                            ( \'""" + NewRealtionID + """\'
+                                            , \'""" + people_id[i] + """\'
+                                            , \'""" + user_id + """\'
+                                            , \'""" + timestamp + """\'
+                                            , \'""" + people_relationship[i] + """\'
+                                            , \'""" + people_have_pic[i] + """\'
+                                            , \'""" + people_pic[i] + """\'
+                                            , \'""" + people_important[i] + """\');""", 'post', conn)
+                        print("relation added")
             
             response['message'] = 'successful'
             response['result'] = items
@@ -1992,28 +2060,28 @@ class UpdateNameTimeZone(Resource):
             print(email_id)
             items = execute("""UPDATE  users
                             SET 
-                                first_name = \'""" + first_name + """\'
-                                , last_name =  \'""" + last_name + """\'
+                                user_first_name = \'""" + first_name + """\'
+                                , user_last_name =  \'""" + last_name + """\'
                                 , time_zone = \'""" + time_zone + """\'
-                            WHERE email_id = \'""" + email_id + """\' ;""", 'post', conn)
+                            WHERE user_email_id = \'""" + email_id + """\' ;""", 'post', conn)
             
-            userIDResponse = execute("SELECT user_unique_id from users where email_id = \'""" + email_id + """\';""", 'get', conn)
+            userIDResponse = execute("SELECT user_unique_id from users where user_email_id = \'""" + email_id + """\';""", 'get', conn)
             print(userIDResponse)
             user_id = userIDResponse['result'][0]['user_unique_id']
             print(user_id)
             NewRelationIDresponse = execute("Call get_relation_id;", 'get', conn)
             NewRelationID = NewRelationIDresponse['result'][0]['new_id']
 
-            TAIDResponse = execute("""SELECT unique_id from ta_people where email_id = \'""" + ta_id + """\';""", 'get', conn)
+            TAIDResponse = execute("""SELECT ta_unique_id from ta_people where ta_email_id = \'""" + ta_id + """\';""", 'get', conn)
             ta_unique_id = TAIDResponse['result'][0]['unique_id']
             print(ta_unique_id)
             execute("""INSERT INTO relationship
                         (id
                         , ta_people_id
-                        , user_id
+                        , user_uid
                         , relation_type
-                        , have_pic
-                        , picture
+                        , ta_have_pic
+                        , ta_picture
                         , important)
                         VALUES 
                         ( \'""" + NewRelationID + """\'
@@ -2043,9 +2111,9 @@ class UserLogin(Resource):
             conn = connect()
             
             temp = False
-            emails = execute("""SELECT user_unique_id, email_id from users;""", 'get', conn)
+            emails = execute("""SELECT user_unique_id, user_email_id from users;""", 'get', conn)
             for i in range(len(emails['result'])):
-                email = emails['result'][i]['email_id']
+                email = emails['result'][i]['user_email_id']
                 if email == email_id:
                     temp = True
                     user_unique_id = emails['result'][i]['user_unique_id']
@@ -2074,20 +2142,18 @@ class Usertoken(Resource):
             query = None
                     
             query = """SELECT user_unique_id
-                            , email_id
-                            , google_auth_token
-                            , google_refresh_token
+                                , user_email_id
+                                , google_auth_token
+                                , google_refresh_token
                         FROM
                         users WHERE user_unique_id = \'""" + user_id + """\';"""
             
             items = execute(query, 'get', conn)
 
             response['message'] = 'successful'
-            response['email_id'] = items['result'][0]['email_id']
+            response['email_id'] = items['result'][0]['user_email_id']
             response['google_auth_token'] = items['result'][0]['google_auth_token']
             response['google_refresh_token'] = items['result'][0]['google_refresh_token']
-
-        
 
             return response, 200
         except:
@@ -2110,32 +2176,36 @@ class Usertoken(Resource):
 # Run on below IP address and port
 # Make sure port number is unused (i.e. don't use numbers 0-1023)
 
-api.add_resource(GoalsRoutines, '/api/v2/getgoalsandroutines', '/api/v2/getgoalsandroutines/<string:user_id>')
-api.add_resource(AboutMe, '/api/v2/aboutme', '/api/v2/aboutme/<string:user_id>')
-api.add_resource(ListAllTA, '/api/v2/listAllTA', '/api/v2/listAllTA/<string:user_id>')
-api.add_resource(AnotherTAAccess, '/api/v2/anotherTAAccess')
-api.add_resource(ImportantPeople, '/api/v2/listPeople', '/api/v2/listPeople/<string:user_id>')
-api.add_resource(addNewAT, '/api/v2/addAT')
-api.add_resource(addNewGR, '/api/v2/addGR')
+# GET requests
+api.add_resource(GoalsRoutines, '/api/v2/getgoalsandroutines', '/api/v2/getgoalsandroutines/<string:user_id>') # working
+api.add_resource(AboutMe, '/api/v2/aboutme', '/api/v2/aboutme/<string:user_id>') #working
+api.add_resource(ListAllTA, '/api/v2/listAllTA', '/api/v2/listAllTA/<string:user_id>') #working
+api.add_resource(ListAllPeople, '/api/v2/listPeople', '/api/v2/listPeople/<string:user_id>') #working
+api.add_resource(ActionsTasks, '/api/v2/actionsTasks/<string:goal_routine_id>') #working
+api.add_resource(DailyView, '/api/v2/dailyView/<user_id>') #working
+api.add_resource(WeeklyView, '/api/v2/weeklyView/<user_id>') #working
+api.add_resource(MonthlyView, '/api/v2/monthlyView/<user_id>') #working
+api.add_resource(AllUsers, '/api/v2/usersOfTA/<string:email_id>') #working
+api.add_resource(TALogin, '/api/v2/loginTA/<string:email_id>/<string:password>') #working
+api.add_resource(TASocialLogin, '/api/v2/loginSocialTA/<string:email_id>') #working
+api.add_resource(Usertoken, '/api/v2/usersToken/<string:user_id>') #working
+api.add_resource(UserLogin, '/api/v2/userLogin/<string:email_id>') #working
+
+# POST requests
+api.add_resource(AnotherTAAccess, '/api/v2/anotherTAAccess') #working
+api.add_resource(AddNewAT, '/api/v2/addAT')
+api.add_resource(AddNewGR, '/api/v2/addGR')
 api.add_resource(DeleteAT, '/api/v2/deleteAT')
 api.add_resource(DeleteGR, '/api/v2/deleteGR')
-api.add_resource(DailyView, '/api/v2/dailyView/<user_id>')
-api.add_resource(WeeklyView, '/api/v2/weeklyView/<user_id>')
-api.add_resource(MonthlyView, '/api/v2/monthlyView/<user_id>')
-api.add_resource(CreateNewPeople, '/api/v2/addPeople')
+api.add_resource(CreateNewPeople, '/api/v2/addPeople') #working
 api.add_resource(DeletePeople, '/api/v2/deletePeople')
 api.add_resource(UpdateTime, '/api/v2/updateTime/<user_id>')
-api.add_resource(NewTA, '/api/v2/addNewTA')
-api.add_resource(TASocialSignUP, '/api/v2/addNewSocialTA')
-api.add_resource(AllUsers, '/api/v2/usersOfTA/<string:email_id>')
-# api.add_resource(TALogin, '/api/v2/loginTA?email_id=<string:email_id>&password=<password>')
-api.add_resource(TALogin, '/api/v2/loginTA/<string:email_id>/<string:password>')
-api.add_resource(SocialLogin, '/api/v2/loginSocialTA/<string:email_id>')
-api.add_resource(CreateNewUser, '/api/v2/addNewUser')
+api.add_resource(NewTA, '/api/v2/addNewTA') #working
+api.add_resource(TASocialSignUP, '/api/v2/addNewSocialTA') #working
+api.add_resource(CreateNewUser, '/api/v2/addNewUser') #working
 api.add_resource(UpdateAboutMe, '/api/v2/updateAboutMe')
-api.add_resource(UserLogin, '/api/v2/userLogin/<string:email_id>')
 api.add_resource(UpdateNameTimeZone, '/api/v2/updateNewUser')
-api.add_resource(Usertoken, '/api/v2/usersToken/<string:user_id>')
+
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=4000)
