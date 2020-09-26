@@ -541,13 +541,14 @@ class AddNewGR(Resource):
             conn = connect()
             data = request.get_json(force=True)
 
+            id = data['id']
             audio = data['audio']
             datetime_completed = data['datetime_completed']
             datetime_started = data['datetime_started']
             end_day_and_time = data['end_day_and_time']
             expected_completion_time = data['expected_completion_time']
             user_id = data['user_id']
-            ta_id = data['ta_people_id']
+            # ta_id = data['ta_people_id']
             is_available = data['is_available']
             is_complete = data['is_complete']
             is_displayed_today = data['is_displayed_today']
@@ -667,44 +668,45 @@ class AddNewGR(Resource):
                         , \'""" + expected_completion_time + """\');""")
 
             execute(query[1], 'post', conn)
-            # New Notification ID
-            new_notification_id_response = execute("CALL get_notification_id;",  'get', conn)
-            new_notfication_id = new_notification_id_response['result'][0]['new_id']
+            
+            # # New Notification ID
+            # new_notification_id_response = execute("CALL get_notification_id;",  'get', conn)
+            # new_notfication_id = new_notification_id_response['result'][0]['new_id']
 
-            # TA notfication
-            query.append("""Insert into notifications
-                                (notification_id
-                                    , user_ta_id
-                                    , gr_at_id
-                                    , before_is_enable
-                                    , before_is_set
-                                    , before_message
-                                    , before_time
-                                    , during_is_enable
-                                    , during_is_set
-                                    , during_message
-                                    , during_time
-                                    , after_is_enable
-                                    , after_is_set
-                                    , after_message
-                                    , after_time) 
-                                VALUES
-                                (     \'""" + new_notfication_id + """\'
-                                    , \'""" + ta_id + """\'
-                                    , \'""" + new_gr_id + """\'
-                                    , \'""" + str(ta_before_is_enable) + """\'
-                                    , \'""" + str(ta_before_is_set) + """\'
-                                    , \'""" + ta_before_message + """\'
-                                    , \'""" + ta_before_time + """\'
-                                    , \'""" + str(ta_during_is_enable) + """\'
-                                    , \'""" + str(ta_during_is_set) + """\'
-                                    , \'""" + ta_during_message + """\'
-                                    , \'""" + ta_during_time + """\'
-                                    , \'""" + str(ta_after_is_enable) + """\'
-                                    , \'""" + str(ta_after_is_set) + """\'
-                                    , \'""" + ta_after_message + """\'
-                                    , \'""" + ta_after_time + """\');""")
-            execute(query[2], 'post', conn)
+            # # TA notfication
+            # query.append("""Insert into notifications
+            #                     (notification_id
+            #                         , user_ta_id
+            #                         , gr_at_id
+            #                         , before_is_enable
+            #                         , before_is_set
+            #                         , before_message
+            #                         , before_time
+            #                         , during_is_enable
+            #                         , during_is_set
+            #                         , during_message
+            #                         , during_time
+            #                         , after_is_enable
+            #                         , after_is_set
+            #                         , after_message
+            #                         , after_time) 
+            #                     VALUES
+            #                     (     \'""" + new_notfication_id + """\'
+            #                         , \'""" + ta_id + """\'
+            #                         , \'""" + new_gr_id + """\'
+            #                         , \'""" + str(ta_before_is_enable) + """\'
+            #                         , \'""" + str(ta_before_is_set) + """\'
+            #                         , \'""" + ta_before_message + """\'
+            #                         , \'""" + ta_before_time + """\'
+            #                         , \'""" + str(ta_during_is_enable) + """\'
+            #                         , \'""" + str(ta_during_is_set) + """\'
+            #                         , \'""" + ta_during_message + """\'
+            #                         , \'""" + ta_during_time + """\'
+            #                         , \'""" + str(ta_after_is_enable) + """\'
+            #                         , \'""" + str(ta_after_is_set) + """\'
+            #                         , \'""" + ta_after_message + """\'
+            #                         , \'""" + ta_after_time + """\');""")
+            # execute(query[2], 'post', conn)
 
             # New notification ID
             NewNotificationIDresponse = execute("CALL get_notification_id;",  'get', conn)
@@ -743,7 +745,7 @@ class AddNewGR(Resource):
                                     , \'""" + str(user_after_is_set) + """\'
                                     , \'""" + user_after_message + """\'
                                     , \'""" + user_after_time + """\');""")
-            items = execute(query[3], 'post', conn)
+            items = execute(query[2], 'post', conn)
 
 
             response['message'] = 'successful'
@@ -1784,7 +1786,8 @@ class CreateNewPeople(Resource):
 
             user_id = data['user_id']
             email_id = data['email_id']
-            name = data['name']
+            name = data['first_name']
+            last_name = data['last_name']
             employer = data['employer']
             relation_type = data['relationship']
             phone_number = data['phone_number']
@@ -2203,7 +2206,7 @@ class UpdateAboutMe(Resource):
             people_pic = []
             people_relationship = []
             people_important = []
-            people_phone_number = []
+            people_user_id = []
 
             relation_type = []
             user_id = data['user_id']
@@ -2213,15 +2216,18 @@ class UpdateAboutMe(Resource):
             message_card = data['message_card']
             message_day = data['message_day']
             picture = data['picture']
+
             if len(data['people']) > 0:
                 for i in range(len(data['people'])):
+                    people_user_id.append(data['people'][i]['user_uid'])
                     people_id.append(data['people'][i]['ta_people_id'])
                     people_name.append(data['people'][i]['name'])
                     people_relationship.append(data['people'][i]['relationship'])
-                    people_phone_number.append(data['people'][i]['phone_number'])
+                    # people_phone_number.append(data['people'][i]['phone_number'])
                     people_important.append(data['people'][i]['important'])
                     people_have_pic.append(data['people'][i]['have_pic'])
                     people_pic.append(data['people'][i]['pic'])
+            print("picture")
             afternoon_time = data['timeSettings']["afternoon"]
             day_end = data['timeSettings']["dayEnd"]
             day_start = data['timeSettings']["dayStart"]
@@ -2229,7 +2235,8 @@ class UpdateAboutMe(Resource):
             morning_time = data['timeSettings']["morning"]
             night_time = data['timeSettings']["night"]
             time_zone = data['timeSettings']["timeZone"]
-
+            print(time_zone)
+            people_phone_number = ['12436342835'] * len(people_id)
             execute("""UPDATE  users
                             SET 
                                 user_first_name = \'""" + first_name + """\'
