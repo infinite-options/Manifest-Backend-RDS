@@ -1832,7 +1832,7 @@ class CreateNewPeople(Resource):
                     execute("""UPDATE relationship
                                 SET r_timestamp = \'""" + str(ts) + """\'
                                 , relation_type = \'""" + relation_type + """\'
-                                , ta_have_pic = \'""" + have_pic + """\'
+                                , ta_have_pic = \'""" + str(have_pic) + """\'
                                 , ta_picture = \'""" + picture + """\'
                                 , important = \'""" + important + """\'
                                 WHERE user_uid = \'""" + user_id + """\' AND 
@@ -1856,7 +1856,7 @@ class CreateNewPeople(Resource):
                             , \'""" + typeResponse['result'][0]['ta_unique_id'] + """\'
                             , \'""" + user_id + """\'
                             , \'""" + relation_type + """\'
-                            , \'""" + have_pic + """\'
+                            , \'""" + str(have_pic) + """\'
                             , \'""" + picture + """\'
                             , \'""" + important + """\'
                             , \'""" + str(0) + """\')""", 'post', conn)
@@ -1898,7 +1898,7 @@ class CreateNewPeople(Resource):
                                             , \'""" + NewPeopleID + """\'
                                             , \'""" + user_id + """\'
                                             , \'""" + relation_type + """\'
-                                            , \'""" + have_pic + """\'
+                                            , \'""" + str(have_pic) + """\'
                                             , \'""" + picture + """\'
                                             , \'""" + important + """\'
                                             , \'""" + str(0) + """\')""", 'post', conn)
@@ -2240,7 +2240,7 @@ class UpdateAboutMe(Resource):
             execute("""UPDATE  users
                             SET 
                                 user_first_name = \'""" + first_name + """\'
-                                , user_have_pic = \'""" + have_pic + """\'
+                                , user_have_pic = \'""" + str(have_pic) + """\'
                                 , user_picture = \'""" + picture + """\'
                                 , message_card = \'""" + message_card + """\'
                                 , message_day = \'""" + message_day + """\'
@@ -2277,7 +2277,7 @@ class UpdateAboutMe(Resource):
                                     SET 
                                         r_timestamp = \'""" + timestamp + """\'
                                         , relation_type = \'""" + people_relationship[i] + """\'
-                                        , ta_have_pic =  \'""" + people_have_pic[i] + """\'
+                                        , ta_have_pic =  \'""" + str(people_have_pic[i]) + """\'
                                         , ta_picture = \'""" + people_pic[i] + """\'
                                         , important = \'""" + people_important[i] + """\'
                                     WHERE ta_people_id = \'""" + people_id[i] + """\' 
@@ -2303,7 +2303,7 @@ class UpdateAboutMe(Resource):
                                         , \'""" + user_id + """\'
                                         , \'""" + timestamp + """\'
                                         , \'""" + people_relationship[i] + """\'
-                                        , \'""" + people_have_pic[i] + """\'
+                                        , \'""" + str(people_have_pic[i]) + """\'
                                         , \'""" + people_pic[i] + """\'
                                         , \'""" + people_important[i] + """\'
                                         , \'""" + str(0) + """\');""", 'post', conn)
