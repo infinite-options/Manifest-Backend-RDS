@@ -459,7 +459,7 @@ class AnotherTAAccess(Resource):
                                         , \'""" + 'advisor' + """\'
                                         , \'""" + 'FALSE' + """\'
                                         , \'""" + '' + """\'
-                                        , \'""" + '' + """\'
+                                        , \'""" + 'FALSE' + """\'
                                         , \'""" + str(1) + """\');""")
             items = execute(query[1], 'post', conn)
 
@@ -1781,7 +1781,7 @@ class CreateNewPeople(Resource):
 
         try:
             conn = connect()
-            ts  = dt.datetime.now()
+            ts  = getNow()
             data = request.get_json(force=True)
 
             user_id = data['user_id']
@@ -1796,6 +1796,7 @@ class CreateNewPeople(Resource):
             important = 'False'
 
             email_list = []
+            
             if picture != '':
                 have_pic = 'TRUE'
             else:
@@ -1803,7 +1804,10 @@ class CreateNewPeople(Resource):
 
             list = name.split()
             first_name = list[0]
-            last_name = list[1]
+            if len(list) == 1:
+                last_name = ''
+            else:
+                last_name = list[1]
 
             query = ["Call get_relation_id;"]
             NewRelationIDresponse = execute(query[0], 'get', conn)
@@ -1864,9 +1868,10 @@ class CreateNewPeople(Resource):
             else:
                 NewPeopleIDresponse = execute("CALL get_ta_people_id;", 'get', conn)
                 NewPeopleID = NewPeopleIDresponse['result'][0]['new_id']
-
+                print(NewPeopleID)
                 execute("""INSERT INTO ta_people(
                                         ta_unique_id
+                                        , ta_timestamp
                                         , ta_email_id
                                         , ta_first_name
                                         , ta_last_name
@@ -1875,6 +1880,7 @@ class CreateNewPeople(Resource):
                                         , ta_phone_number)
                                         VALUES ( 
                                             \'""" + NewPeopleID + """\'
+                                            , \'""" + ts + """\'
                                             , \'""" + email_id + """\'
                                             , \'""" + first_name + """\'
                                             , \'""" + last_name + """\'
@@ -1976,6 +1982,72 @@ class UpdateTime(Resource):
         finally:
             disconnect(conn)
 
+# Update time and time zone
+class CurrentStatus(Resource):
+    def get(self, user_id):    
+        response = {}
+        items = {}
+
+        try:
+            conn = connect()
+           
+            
+            goal_response = execute("""SELECT gr_unique_id, gr_title, is_in_progress, is_complete FROM goals_routines 
+                        WHERE user_id = \'""" + user_id + """\';""", 'get', conn)
+
+            for i in range(len(goal_response['result'])):
+                at_response = execute(""" SELECT at_unique_id, at_title, is_in_progress, is_complete FROM actions_tasks 
+                                WHERE goal_routine_id =  \'""" + goal_response['result'][i]['gr_unique_id'] + """\';""", 'get', conn)
+
+                if len(at_response['result']) > 0:
+                   
+                    goal_response['result'][i]['actions_tasks'] = at_response['result']
+                 
+
+            response['message'] = 'successful'
+            response['result'] = goal_response
+
+            return response, 200
+        except:
+            raise BadRequest('Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
+
+# Update time and time zone
+class Reset(Resource):
+    def post(self, gr_unique_id):    
+        response = {}
+        items = {}
+
+        try:
+            conn = connect()
+            data = request.get_json(force=True)
+           
+            
+            
+            execute(""" UPDATE goals_routines
+                        SET 
+                        is_in_progress = \'""" + 'FALSE' + """\'
+                        , is_complete = \'""" + 'FALSE' + """\'
+                        WHERE gr_unique_id = \'""" + gr_unique_id + """\';""", 'post', conn)
+
+            execute(""" UPDATE actions_actions
+                        SET 
+                        is_in_progress = \'""" + 'FALSE' + """\'
+                        , is_complete = \'""" + 'FALSE' + """\'
+                        WHERE goal_routine_id = \'""" + gr_unique_id + """\';""", 'post', conn)
+
+
+            response['message'] = 'successful'
+            response['result'] = items
+
+            return response, 200
+        except:
+            raise BadRequest('Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
 # New TA signup
 class NewTA(Resource):
     def post(self):    
@@ -1985,38 +2057,53 @@ class NewTA(Resource):
         try:
             conn = connect()
             data = request.get_json(force=True)
+
+            ts = getNow()
+
             email_id = data['email_id']
             password = data['password']
             first_name = data['first_name']
             last_name = data['last_name']
             phone_number = data['phone_number']
             employer = data['employer']
-            salt = os.urandom(32)
-           
-            dk = hashlib.pbkdf2_hmac('sha256',  password.encode('utf-8') , salt, 100000, dklen=128)
-            key = (salt + dk).hex()
 
-            NewPeopleIDresponse = execute("CALL get_ta_people_id;", 'get', conn)
-            NewPeopleID = NewPeopleIDresponse['result'][0]['new_id']
 
-            execute("""INSERT INTO ta_people(
-                                        ta_unique_id
-                                        , ta_email_id
-                                        , ta_first_name
-                                        , ta_last_name
-                                        , employer
-                                        , password_hashed
-                                        , ta_phone_number)                                        
-                                        VALUES ( 
-                                            \'""" + NewPeopleID + """\'
-                                            , \'""" + email_id + """\'
-                                            , \'""" + first_name + """\'
-                                            , \'""" + last_name + """\'
-                                            , \'""" + employer + """\'
-                                            , \'""" + key + """\'
-                                            , \'""" + phone_number + """\')""", 'post', conn)
-            response['message'] = 'successful'
-            response['result'] = items
+            ta_id_response = execute("""SELECT ta_unique_id, password_hashed FROM ta_people
+                                            WHERE ta_email_id = \'""" +email_id+ """\';""", 'get', conn)
+            
+            if len(ta_id_response['result']) > 0:
+                response['message'] = "Email ID already exists."
+            
+            else:
+            
+                salt = os.urandom(32)
+            
+                dk = hashlib.pbkdf2_hmac('sha256',  password.encode('utf-8') , salt, 100000, dklen=128)
+                key = (salt + dk).hex()
+
+                new_ta_id_response = execute("CALL get_ta_people_id;", 'get', conn)
+                new_ta_id = new_ta_id_response['result'][0]['new_id']
+
+                execute("""INSERT INTO ta_people(
+                                            ta_unique_id
+                                            , ta_timestamp
+                                            , ta_email_id
+                                            , ta_first_name
+                                            , ta_last_name
+                                            , employer
+                                            , password_hashed
+                                            , ta_phone_number)                                        
+                                            VALUES ( 
+                                                \'""" + new_ta_id + """\'
+                                                , \'""" + ts + """\'
+                                                , \'""" + email_id + """\'
+                                                , \'""" + first_name + """\'
+                                                , \'""" + last_name + """\'
+                                                , \'""" + employer + """\'
+                                                , \'""" + key + """\'
+                                                , \'""" + phone_number + """\')""", 'post', conn)
+                response['message'] = 'successful'
+                response['result'] = new_ta_id
 
             return response, 200
         except:
@@ -2033,31 +2120,43 @@ class TASocialSignUP(Resource):
         try:
             conn = connect()
             data = request.get_json(force=True)
+
+            ts = getNow()
+
             email_id = data['email_id']
             first_name = data['first_name']
             last_name = data['last_name']
             phone_number = data['phone_number']
             employer = data['employer']
-           
-            NewPeopleIDresponse = execute("CALL get_ta_people_id;", 'get', conn)
-            NewPeopleID = NewPeopleIDresponse['result'][0]['new_id']
 
-            execute("""INSERT INTO ta_people(
-                                            ta_unique_id
-                                            , ta_email_id
-                                            , ta_first_name
-                                            , ta_last_name
-                                            , employer
-                                            , ta_phone_number)
-                                        VALUES ( 
-                                            \'""" + NewPeopleID + """\'
-                                            , \'""" + email_id + """\'
-                                            , \'""" + first_name + """\'
-                                            , \'""" + last_name + """\'
-                                            , \'""" + employer + """\'
-                                            , \'""" + phone_number + """\')""", 'post', conn)
-            response['message'] = 'successful'
-            response['result'] = items
+            ta_id_response = execute("""SELECT ta_unique_id, password_hashed FROM ta_people
+                                            WHERE ta_email_id = \'""" +email_id+ """\';""", 'get', conn)
+            
+            if len(ta_id_response['result']) > 0:
+                response['message'] = "Email ID already exists."
+           
+            else: 
+                new_ta_id_response = execute("CALL get_ta_people_id;", 'get', conn)
+                new_ta_id = new_ta_id_response['result'][0]['new_id']
+
+                execute("""INSERT INTO ta_people(
+                                                ta_unique_id
+                                                , ta_timestamp
+                                                , ta_email_id
+                                                , ta_first_name
+                                                , ta_last_name
+                                                , employer
+                                                , ta_phone_number)
+                                            VALUES ( 
+                                                \'""" + new_ta_id + """\'
+                                                , \'""" + ts + """\'
+                                                , \'""" + email_id + """\'
+                                                , \'""" + first_name + """\'
+                                                , \'""" + last_name + """\'
+                                                , \'""" + employer + """\'
+                                                , \'""" + phone_number + """\')""", 'post', conn)
+                response['message'] = 'successful'
+                response['result'] = new_ta_id
 
             return response, 200
         except:
@@ -2158,28 +2257,36 @@ class CreateNewUser(Resource):
             google_auth_token = data['google_auth_token']
             google_refresh_token = data['google_refresh_token']
 
-            UserIDResponse = execute("CAll get_user_id;", 'get', conn)
-            NewUserID = UserIDResponse['result'][0]['new_id']
-          
-            execute("""INSERT INTO users(
-                            user_unique_id
-                            , user_timestamp
-                            , user_email_id
-                            , user_first_name
-                            , user_last_name
-                            , google_auth_token
-                            , google_refresh_token)
-                        VALUES ( 
-                            \'""" + NewUserID + """\'
-                            , \'""" + timestamp + """\'
-                            , \'""" + email_id + """\'
-                            , \'""" + google_auth_token + """\'
-                            , \'""" + google_refresh_token + """\')""", 'post', conn)
+            user_id_response = execute("""SELECT user_unique_id FROM users
+                                            WHERE user_email_id = \'""" +email_id+ """\';""", 'get', conn)
             
-            
+            if len(user_id_response['result']) > 0:
+                response['message'] = 'User already exists'
 
-            response['message'] = 'successful'
-            response['result'] = NewUserID
+            else:
+                user_id_response = execute("CAll get_user_id;", 'get', conn)
+                new_user_id = user_id_response['result'][0]['new_id']
+
+
+                execute("""INSERT INTO users(
+                                user_unique_id
+                                , user_timestamp
+                                , user_email_id
+                                , google_auth_token
+                                , google_refresh_token
+                                , user_have_pic
+                                , user_picture)
+                            VALUES ( 
+                                \'""" + new_user_id + """\'
+                                , \'""" + timestamp + """\'
+                                , \'""" + email_id + """\'
+                                , \'""" + google_auth_token + """\'
+                                , \'""" + google_refresh_token + """\'
+                                , \'""" + 'FALSE' + """\'
+                                , \'""" + '' + """\')""", 'post', conn)
+
+                response['message'] = 'successful'
+                response['result'] = new_user_id
 
             return response, 200
         except:
@@ -2207,6 +2314,7 @@ class UpdateAboutMe(Resource):
             people_relationship = []
             people_important = []
             people_user_id = []
+            people_phone_number = []
 
             relation_type = []
             user_id = data['user_id']
@@ -2219,15 +2327,14 @@ class UpdateAboutMe(Resource):
 
             if len(data['people']) > 0:
                 for i in range(len(data['people'])):
-                    people_user_id.append(data['people'][i]['user_uid'])
                     people_id.append(data['people'][i]['ta_people_id'])
                     people_name.append(data['people'][i]['name'])
                     people_relationship.append(data['people'][i]['relationship'])
-                    # people_phone_number.append(data['people'][i]['phone_number'])
+                    people_phone_number.append(data['people'][i]['phone_number'])
                     people_important.append(data['people'][i]['important'])
                     people_have_pic.append(data['people'][i]['have_pic'])
                     people_pic.append(data['people'][i]['pic'])
-            print("picture")
+
             afternoon_time = data['timeSettings']["afternoon"]
             day_end = data['timeSettings']["dayEnd"]
             day_start = data['timeSettings']["dayStart"]
@@ -2235,44 +2342,47 @@ class UpdateAboutMe(Resource):
             morning_time = data['timeSettings']["morning"]
             night_time = data['timeSettings']["night"]
             time_zone = data['timeSettings']["timeZone"]
-            print(time_zone)
-            people_phone_number = ['12436342835'] * len(people_id)
+
+            # Updating user data
             execute("""UPDATE  users
                             SET 
                                 user_first_name = \'""" + first_name + """\'
                                 , user_have_pic = \'""" + str(have_pic) + """\'
-                                , user_picture = \'""" + picture + """\'
-                                , message_card = \'""" + message_card + """\'
-                                , message_day = \'""" + message_day + """\'
+                                , user_picture = \'""" + str(picture) + """\'
+                                , message_card = \'""" + str(message_card) + """\'
+                                , message_day = \'""" + str(message_day) + """\'
                                 , user_last_name =  \'""" + last_name + """\'
-                                , time_zone = \'""" + time_zone + """\'
-                                , morning_time = \'""" + morning_time + """\'
-                                , afternoon_time = \'""" + afternoon_time + """\'
-                                , evening_time = \'""" + evening_time + """\'
-                                , night_time = \'""" + night_time + """\'
-                                , day_start = \'""" + day_start + """\'
-                                , day_end = \'""" + day_end + """\'
+                                , time_zone = \'""" + str(time_zone) + """\'
+                                , morning_time = \'""" + str(morning_time) + """\'
+                                , afternoon_time = \'""" + str(afternoon_time) + """\'
+                                , evening_time = \'""" + str(evening_time) + """\'
+                                , night_time = \'""" + str(night_time) + """\'
+                                , day_start = \'""" + str(day_start) + """\'
+                                , day_end = \'""" + str(day_end) + """\'
                             WHERE user_unique_id = \'""" + user_id + """\' ;""", 'post', conn)
 
             for i in range(len(people_id)):
-                list = people_name[i].split()
+                list = people_name[i].split(" ", 1)
                 first_name = list[0]
-                last_name = list[1]
+                if len(list) == 1:
+                    last_name = ''
+                else:
+                    last_name = list[1]
 
                 execute("""UPDATE  ta_people
                             SET 
                                 ta_first_name = \'""" + first_name + """\'
+                                , ta_timestamp = \'""" + timestamp + """\'
                                 , ta_last_name = \'""" + last_name + """\'
-                                , ta_phone_number =  \'""" + people_phone_number[i] + """\'
+                                , ta_phone_number =  \'""" + str(people_phone_number[i]) + """\'
                             WHERE ta_unique_id = \'""" + people_id[i] + """\' ;""", 'post', conn)
-
 
                 relationResponse = execute("""SELECT id FROM relationship 
                             WHERE ta_people_id = \'""" + people_id[i] + """\' 
                             and user_uid = \'""" + user_id + """\';""", 'get', conn)
-                            
-                print(relationResponse['result'])
+                                            
                 if len(relationResponse['result']) > 0:
+                
                     items = execute("""UPDATE  relationship
                                     SET 
                                         r_timestamp = \'""" + timestamp + """\'
@@ -2284,6 +2394,7 @@ class UpdateAboutMe(Resource):
                                     and user_uid = \'""" + user_id + """\' ;""", 'post', conn)
 
                 if len(relationResponse['result']) == 0:
+                    print("P")
                     NewRelationIDresponse = execute("Call get_relation_id;", 'get', conn)
                     NewRelationID = NewRelationIDresponse['result'][0]['new_id']
 
@@ -2327,9 +2438,12 @@ class UpdateNameTimeZone(Resource):
             timestamp = getNow()
             conn = connect()
             data = request.get_json(force=True)
-            
+            # with open('/data.txt', 'w+') as outfile:
+            #     json.dump(data, outfile)
+            # ta_email = data['ta_email']
+
+
             ta_people_id = data['ta_people_id']
-            ta_email = data['ta_email']
             user_unique_id = data['user_unique_id']
             first_name = data['first_name']
             last_name = data['last_name']
@@ -2341,6 +2455,12 @@ class UpdateNameTimeZone(Resource):
                                 , user_last_name =  \'""" + last_name + """\'
                                 , time_zone = \'""" + time_zone + """\'
                                 , user_timestamp = \'""" + time_zone + """\'
+                                , morning_time = \'""" + '06:00' + """\'
+                                , afternoon_time = \'""" + '11:00' + """\'
+                                , evening_time = \'""" + '16:00' + """\'
+                                , night_time = \'""" + '21:00' + """\'
+                                , day_start = \'""" + '00:00' + """\'
+                                , day_end = \'""" + '23:59' + """\'
                             WHERE user_unique_id = \'""" + user_unique_id + """\' ;""", 'post', conn)
 
             NewRelationIDresponse = execute("Call get_relation_id;", 'get', conn)
@@ -2532,6 +2652,7 @@ api.add_resource(TALogin, '/api/v2/loginTA/<string:email_id>/<string:password>')
 api.add_resource(TASocialLogin, '/api/v2/loginSocialTA/<string:email_id>') #working
 api.add_resource(Usertoken, '/api/v2/usersToken/<string:user_id>') #working
 api.add_resource(UserLogin, '/api/v2/userLogin/<string:email_id>') #working
+api.add_resource(CurrentStatus, '/api/v2/currentStatus/<string:user_id>') #working
 
 # POST requests
 api.add_resource(AnotherTAAccess, '/api/v2/anotherTAAccess') #working
