@@ -2623,6 +2623,41 @@ class Usertoken(Resource):
 #         finally:
 #             disconnect(conn)
 
+# Add coordinates
+class AddCoordinates(Resource):
+    def post(self):    
+        response = {}
+        items = {}
+
+        try:
+            conn = connect()
+            data = request.get_json(force=True)
+            x = data['x']
+            y = data['y']
+            z = data['z']
+            timestamp = data['timestamp']
+            
+            execute(""" INSERT INTO coordinates
+                        (     x
+                            , y
+                            , z
+                            , timestamp)
+                            VALUES (
+                                \'""" +str(x)+ """\'
+                                ,\'""" +str(y)+ """\'
+                                , \'""" +str(z)+ """\'
+                                , \'""" +str(timestamp)+ """\'
+                            );""", 'post', conn)
+        
+            response['message'] = 'successful'
+            response['result'] = "Added in database"
+
+            return response, 200
+        except:
+            raise BadRequest('Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
 
 # Define API routes
 
@@ -2644,15 +2679,15 @@ api.add_resource(AboutMe, '/api/v2/aboutme', '/api/v2/aboutme/<string:user_id>')
 api.add_resource(ListAllTA, '/api/v2/listAllTA', '/api/v2/listAllTA/<string:user_id>') #working
 api.add_resource(ListAllPeople, '/api/v2/listPeople', '/api/v2/listPeople/<string:user_id>') #working
 api.add_resource(ActionsTasks, '/api/v2/actionsTasks/<string:goal_routine_id>') #working
-api.add_resource(DailyView, '/api/v2/dailyView/<user_id>') #working
-api.add_resource(WeeklyView, '/api/v2/weeklyView/<user_id>') #working
-api.add_resource(MonthlyView, '/api/v2/monthlyView/<user_id>') #working
+# api.add_resource(DailyView, '/api/v2/dailyView/<user_id>') #working
+# api.add_resource(WeeklyView, '/api/v2/weeklyView/<user_id>') #working
+# api.add_resource(MonthlyView, '/api/v2/monthlyView/<user_id>') #working
 api.add_resource(AllUsers, '/api/v2/usersOfTA/<string:email_id>') #working
 api.add_resource(TALogin, '/api/v2/loginTA/<string:email_id>/<string:password>') #working
 api.add_resource(TASocialLogin, '/api/v2/loginSocialTA/<string:email_id>') #working
 api.add_resource(Usertoken, '/api/v2/usersToken/<string:user_id>') #working
 api.add_resource(UserLogin, '/api/v2/userLogin/<string:email_id>') #working
-api.add_resource(CurrentStatus, '/api/v2/currentStatus/<string:user_id>') #working
+# api.add_resource(CurrentStatus, '/api/v2/currentStatus/<string:user_id>') #working
 
 # POST requests
 api.add_resource(AnotherTAAccess, '/api/v2/anotherTAAccess') #working
@@ -2670,6 +2705,7 @@ api.add_resource(TASocialSignUP, '/api/v2/addNewSocialTA') #working
 api.add_resource(CreateNewUser, '/api/v2/addNewUser') #working
 api.add_resource(UpdateAboutMe, '/api/v2/updateAboutMe')
 api.add_resource(UpdateNameTimeZone, '/api/v2/updateNewUser')
+api.add_resource(AddCoordinates, '/api/v2/addCoordinates')
 
 
 # api.add_resource(CreateNewUsers, '/api/v2/createNewUser')
