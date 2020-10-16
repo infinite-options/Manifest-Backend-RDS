@@ -153,22 +153,25 @@ def execute(sql, cmd, conn, skipSerialization=False):
         # response['sql'] = sql
         return response
 
-# def helper_upload_meal_images(file, bucket, key):
-#     filename = 'https://s3-us-west-1.amazonaws.com/' \
-#             + str(bucket) + '/' + str(key)
-#     upload_file = s3.put_object(
-#                         Bucket=bucket,
-#                         Body=file,
-#                         Key=key,
-#                         ACL='public-read',
-#                         ContentType='image/jpeg'
-#                     )
-#     print("Pragya")
-#     return filename
+def helper_upload_meal_img(file, key):
+    bucket = S3_BUCKET
+    if file and allowed_file(file.name):
+        filename = 'https://s3-us-west-1.amazonaws.com/' \
+                   + str(bucket) + '/' + str(key)
 
-# def allowed_file(filename):
-#     """Checks if the file is allowed to upload"""
-#     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+        upload_file = s3.put_object(
+                            Bucket=bucket,
+                            Body=file,
+                            Key=key,
+                            ACL='public-read',
+                            ContentType='image/jpeg'
+                        )
+        return filename
+    return None
+
+def allowed_file(filename):
+    """Checks if the file is allowed to upload"""
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
 # Returns Goals and Routines
@@ -266,18 +269,7 @@ class AboutMe(Resource):
             
             # About me information of a particular users
             else:
-                query = """SELECT ta_people_id
-                                , ta_email_id AS email_id
-                                , people_name
-                                , ta_have_pic AS have_pic
-                                , ta_picture AS picture
-                                , important
-                                , user_unique_id
-                                , relation_type
-                                FROM
-                            users
-                            LEFT JOIN
-                            (SELECT ta_people_id
+                query = """ SELECT ta_people_id
                                 , ta_email_id
                                 , CONCAT(ta_first_name, SPACE(1), ta_last_name) as people_name
                                 , ta_have_pic
@@ -285,12 +277,12 @@ class AboutMe(Resource):
                                 , important
                                 , user_uid
                                 , relation_type
+                                , ta_phone_number as ta_phone
+                                , advisor
                             FROM relationship
                             JOIN ta_people
                             ON ta_people_id = ta_unique_id
-                            WHERE important = 'True') r
-                            ON user_unique_id = r.user_uid
-                            WHERE user_unique_id =  \'""" +user_id+ """\';"""
+                            WHERE important = 'TRUE' and user_uid = \'""" +user_id+ """\';"""
 
             items1 = execute(query, 'get', conn)
 
@@ -457,9 +449,9 @@ class AnotherTAAccess(Resource):
                                         , \'""" + str(ta_id) + """\'
                                         , \'""" + str(user_id) + """\'
                                         , \'""" + 'advisor' + """\'
-                                        , \'""" + 'FALSE' + """\'
+                                        , \'""" + 'False' + """\'
                                         , \'""" + '' + """\'
-                                        , \'""" + 'FALSE' + """\'
+                                        , \'""" + 'False' + """\'
                                         , \'""" + str(1) + """\');""")
             items = execute(query[1], 'post', conn)
 
@@ -646,13 +638,13 @@ class AddNewGR(Resource):
                         ( \'""" + new_gr_id + """\'
                         , \'""" + gr_title + """\'
                         , \'""" + user_id + """\'
-                        , \'""" + str(is_available) + """\'
-                        , \'""" + str(is_complete) + """\'
-                        , \'""" + str(is_in_progress) + """\'
-                        , \'""" + str(is_displayed_today) + """\'
-                        , \'""" + str(is_persistent) + """\'
-                        , \'""" + str(is_sublist_available) + """\'
-                        , \'""" + str(is_timed) + """\'
+                        , \'""" + str(is_available).title() + """\'
+                        , \'""" + str(is_complete).title() + """\'
+                        , \'""" + str(is_in_progress).title() + """\'
+                        , \'""" + str(is_displayed_today).title() + """\'
+                        , \'""" + str(is_persistent).title() + """\'
+                        , \'""" + str(is_sublist_available).title() + """\'
+                        , \'""" + str(is_timed).title() + """\'
                         , \'""" + photo + """\'
                         , \'""" + str(repeat) + """\'
                         , \'""" + repeat_ends + """\'
@@ -733,16 +725,16 @@ class AddNewGR(Resource):
                                 (     \'""" + NewNotificationID + """\'
                                     , \'""" + user_id + """\'
                                     , \'""" + new_gr_id + """\'
-                                    , \'""" + str(user_before_is_enable) + """\'
-                                    , \'""" + str(user_before_is_set) + """\'
+                                    , \'""" + str(user_before_is_enable).title() + """\'
+                                    , \'""" + str(user_before_is_set).title() + """\'
                                     , \'""" + user_before_message + """\'
                                     , \'""" + user_before_time + """\'
-                                    , \'""" + str(user_during_is_enable) + """\'
-                                    , \'""" + str(user_during_is_set) + """\'
+                                    , \'""" + str(user_during_is_enable).title() + """\'
+                                    , \'""" + str(user_during_is_set).title() + """\'
                                     , \'""" + user_during_message + """\'
                                     , \'""" + user_during_time + """\'
-                                    , \'""" + str(user_after_is_enable) + """\'
-                                    , \'""" + str(user_after_is_set) + """\'
+                                    , \'""" + str(user_after_is_enable).title() + """\'
+                                    , \'""" + str(user_after_is_set).title() + """\'
                                     , \'""" + user_after_message + """\'
                                     , \'""" + user_after_time + """\');""")
             items = execute(query[2], 'post', conn)
@@ -781,14 +773,18 @@ class UpdateGR(Resource):
             is_persistent = data['is_persistent']
             is_sublist_available = data['is_sublist_available']
             is_timed = data['is_timed']
+            print(is_timed)
             photo = data['photo']
+            print(photo)
             repeat = data['repeat']
+            print(repeat)
             repeat_ends = data['repeat_ends']
             repeat_ends_on = data['repeat_ends_on']
             repeat_every = data['repeat_every']
             repeat_frequency = data['repeat_frequency']
             repeat_occurences = data['repeat_occurences']
             repeat_week_days = data['repeat_week_days']
+            print(repeat_week_days)
             start_day_and_time = data['start_day_and_time']
             ta_before_is_enable = data['ta_notifications']['before']['is_enabled']
             ta_before_is_set = data['ta_notifications']['before']['is_set']
@@ -803,6 +799,7 @@ class UpdateGR(Resource):
             ta_after_message = data['ta_notifications']['after']['message']
             ta_after_time = data['ta_notifications']['after']['time']
             gr_title = data['title']
+            print(gr_title)
             user_before_is_enable = data['user_notifications']['before']['is_enabled']
             user_before_is_set = data['user_notifications']['before']['is_set']
             user_before_message = data['user_notifications']['before']['message']
@@ -816,6 +813,7 @@ class UpdateGR(Resource):
             user_after_message = data['user_notifications']['after']['message']
             user_after_time = data['user_notifications']['after']['time']
             user_id = data['user_id']
+            print(user_id)
             ta_people_id = data['ta_people_id']
             print(user_id)
             # user_id_response = execute("""SELECT user_id from goals_routines where gr_unique_id = \'""" +id+ """\'""", 'get', conn)
@@ -841,13 +839,13 @@ class UpdateGR(Resource):
             # Update G/R to database
             query = """UPDATE goals_routines
                             SET gr_title = \'""" + gr_title + """\'
-                                , is_available = \'""" + str(is_available) + """\'
-                                ,is_complete = \'""" + str(is_complete) + """\'
-                                ,is_sublist_available = \'""" + str(is_sublist_available) + """\'
-                                ,is_in_progress = \'""" + str(is_in_progress) + """\'
-                                ,is_displayed_today = \'""" + str(is_displayed_today) + """\'
-                                ,is_persistent = \'""" + str(is_persistent) + """\'
-                                ,is_timed = \'""" + str(is_timed) + """\'
+                                , is_available = \'""" + str(is_available).title() + """\'
+                                ,is_complete = \'""" + str(is_complete).title() + """\'
+                                ,is_sublist_available = \'""" + str(is_sublist_available).title() + """\'
+                                ,is_in_progress = \'""" + str(is_in_progress).title() + """\'
+                                ,is_displayed_today = \'""" + str(is_displayed_today).title() + """\'
+                                ,is_persistent = \'""" + str(is_persistent).title() + """\'
+                                ,is_timed = \'""" + str(is_timed).title() + """\'
                                 ,start_day_and_time = \'""" + start_day_and_time + """\'
                                 ,end_day_and_time = \'""" + end_day_and_time + """\'
                                 ,datetime_started = \'""" + datetime_started + """\'
@@ -867,39 +865,41 @@ class UpdateGR(Resource):
 
             # TA notfication
             query1 = """UPDATE notifications
-                             SET   before_is_enable = \'""" + str(user_before_is_enable) + """\'
-                                    , before_is_set  = \'""" + str(user_before_is_set) + """\'
+                             SET   before_is_enable = \'""" + str(user_before_is_enable).title() + """\'
+                                    , before_is_set  = \'""" + str(user_before_is_set).title() + """\'
                                     , before_message = \'""" + user_before_message + """\'
                                     , before_time = \'""" + user_before_time + """\'
-                                    , during_is_enable = \'""" + str(user_during_is_enable) + """\'
-                                    , during_is_set = \'""" + str(user_during_is_set) + """\'
+                                    , during_is_enable = \'""" + str(user_during_is_enable).title() + """\'
+                                    , during_is_set = \'""" + str(user_during_is_set).title() + """\'
                                     , during_message = \'""" + user_during_message + """\'
                                     , during_time = \'""" + user_during_time + """\'
-                                    , after_is_enable = \'""" + str(user_after_is_enable) + """\'
-                                    , after_is_set = \'""" + str(user_after_is_set) + """\'
+                                    , after_is_enable = \'""" + str(user_after_is_enable).title() + """\'
+                                    , after_is_set = \'""" + str(user_after_is_set).title() + """\'
                                     , after_message = \'""" + user_after_message + """\'
                                     , after_time  = \'""" + user_after_time + """\'
                                 WHERE gr_at_id = \'""" +id+ """\' and user_ta_id = \'""" +user_id+ """\';"""
             execute(query1, 'post', conn)
             print(query1)
+
             # User notfication
             query2 = """UPDATE notifications
-                             SET   before_is_enable = \'""" + str(ta_before_is_enable) + """\'
-                                    , before_is_set  = \'""" + str(ta_before_is_set) + """\'
+                             SET   before_is_enable = \'""" + str(ta_before_is_enable).title() + """\'
+                                    , before_is_set  = \'""" + str(ta_before_is_set).title() + """\'
                                     , before_message = \'""" + ta_before_message + """\'
                                     , before_time = \'""" + ta_before_time + """\'
-                                    , during_is_enable = \'""" + str(ta_during_is_enable) + """\'
-                                    , during_is_set = \'""" + str(ta_during_is_set) + """\'
+                                    , during_is_enable = \'""" + str(ta_during_is_enable).title() + """\'
+                                    , during_is_set = \'""" + str(ta_during_is_set).title() + """\'
                                     , during_message = \'""" + ta_during_message + """\'
                                     , during_time = \'""" + ta_during_time + """\'
-                                    , after_is_enable = \'""" + str(ta_after_is_enable) + """\'
-                                    , after_is_set = \'""" + str(ta_after_is_set) + """\'
+                                    , after_is_enable = \'""" + str(ta_after_is_enable).title() + """\'
+                                    , after_is_set = \'""" + str(ta_after_is_set).title() + """\'
                                     , after_message = \'""" + ta_after_message + """\'
                                     , after_time  = \'""" + ta_after_time + """\'
                                 WHERE gr_at_id = \'""" +id+ """\' and user_ta_id  = \'""" +ta_people_id+ """\';"""
-
-            items = execute(query2, 'post', conn)
-            response['result'] = "Update Successful"
+            print(query2)
+            execute(query2, 'post', conn)
+            response['message'] = 'Update to Goal and Routine was Successful'
+            return response, 200
         except:
             raise BadRequest('Request failed, please try again later.')
         finally:
@@ -992,13 +992,13 @@ class AddNewAT(Resource):
                         , \'""" + at_title + """\'
                         , \'""" + gr_id + """\'
                         , \'""" + '1' + """\'
-                        , \'""" + str(is_available) + """\'
-                        , \'""" + str(is_complete) + """\'
-                        , \'""" + str(is_in_progress) + """\'
-                        , \'""" + str(is_sublist_available) + """\'
-                        , \'""" + str(is_must_do) + """\'
+                        , \'""" + str(is_available).title() + """\'
+                        , \'""" + str(is_complete).title() + """\'
+                        , \'""" + str(is_in_progress).title() + """\'
+                        , \'""" + str(is_sublist_available).title() + """\'
+                        , \'""" + str(is_must_do).title() + """\'
                         , \'""" + photo + """\'
-                        , \'""" + str(is_timed) + """\'
+                        , \'""" + str(is_timed).title() + """\'
                         , \'""" + datetime_completed + """\'
                         , \'""" + datetime_started + """\'
                         , \'""" + expected_completion_time + """\'
@@ -1164,13 +1164,13 @@ class UpdateAT(Resource):
                         SET  at_title = \'""" + at_title + """\'
                             , goal_routine_id = \'""" + gr_id + """\'
                             , at_sequence = \'""" + '1' + """\'
-                            , is_available = \'""" + str(is_available) + """\'
-                            , is_complete = \'""" + str(is_complete) + """\'
-                            , is_in_progress = \'""" + str(is_in_progress) + """\'
-                            , is_sublist_available = \'""" + str(is_sublist_available) + """\'
-                            , is_must_do = \'""" + str(is_must_do) + """\'
+                            , is_available = \'""" + str(is_available).title() + """\'
+                            , is_complete = \'""" + str(is_complete).title() + """\'
+                            , is_in_progress = \'""" + str(is_in_progress).title() + """\'
+                            , is_sublist_available = \'""" + str(is_sublist_available).title() + """\'
+                            , is_must_do = \'""" + str(is_must_do).title() + """\'
                             , photo = \'""" + photo + """\'
-                            , is_timed = \'""" + str(is_timed) + """\'
+                            , is_timed = \'""" + str(is_timed).title() + """\'
                             , datetime_completed =  \'""" + datetime_completed + """\'
                             , datetime_started = \'""" + datetime_started + """\'
                             , expected_completion_time = \'""" + expected_completion_time + """\'
@@ -1679,7 +1679,7 @@ class VariousRepeatations():
                                     , repeat_every
                                     , repeat_ends_on
                                 FROM goals_routines
-                            WHERE `repeat` = 'TRUE'
+                            WHERE `repeat` = 'True'
                                     AND repeat_ends = 'on'
                                     AND repeat_frequency = 'month' and user_id = \'""" + user_id + """\';""")
             
@@ -1714,7 +1714,7 @@ class VariousRepeatations():
                                     , repeat_every
                                     , repeat_ends_on
                                 FROM goals_routines
-                            WHERE `repeat` = 'TRUE'
+                            WHERE `repeat` = 'True'
                                     AND repeat_ends = 'on'
                                     AND repeat_frequency = 'year' and user_id = \'""" + user_id + """\';""")
             
@@ -1836,9 +1836,9 @@ class CreateNewPeople(Resource):
                     execute("""UPDATE relationship
                                 SET r_timestamp = \'""" + str(ts) + """\'
                                 , relation_type = \'""" + relation_type + """\'
-                                , ta_have_pic = \'""" + str(have_pic) + """\'
+                                , ta_have_pic = \'""" + str(have_pic).title() + """\'
                                 , ta_picture = \'""" + picture + """\'
-                                , important = \'""" + important + """\'
+                                , important = \'""" + str(important).title() + """\'
                                 WHERE user_uid = \'""" + user_id + """\' AND 
                                 ta_people_id = \'""" + typeResponse['result'][0]['ta_unique_id'] + """\'""", 'post', conn)
 
@@ -1860,9 +1860,9 @@ class CreateNewPeople(Resource):
                             , \'""" + typeResponse['result'][0]['ta_unique_id'] + """\'
                             , \'""" + user_id + """\'
                             , \'""" + relation_type + """\'
-                            , \'""" + str(have_pic) + """\'
+                            , \'""" + str(have_pic).title() + """\'
                             , \'""" + picture + """\'
-                            , \'""" + important + """\'
+                            , \'""" + str(important).title() + """\'
                             , \'""" + str(0) + """\')""", 'post', conn)
 
             else:
@@ -1904,9 +1904,9 @@ class CreateNewPeople(Resource):
                                             , \'""" + NewPeopleID + """\'
                                             , \'""" + user_id + """\'
                                             , \'""" + relation_type + """\'
-                                            , \'""" + str(have_pic) + """\'
+                                            , \'""" + str(have_pic).title() + """\'
                                             , \'""" + picture + """\'
-                                            , \'""" + important + """\'
+                                            , \'""" + str(important).title() + """\'
                                             , \'""" + str(0) + """\')""", 'post', conn)
 
                 
@@ -2028,14 +2028,14 @@ class Reset(Resource):
             
             execute(""" UPDATE goals_routines
                         SET 
-                        is_in_progress = \'""" + 'FALSE' + """\'
-                        , is_complete = \'""" + 'FALSE' + """\'
+                        is_in_progress = \'""" + 'False' + """\'
+                        , is_complete = \'""" + 'False' + """\'
                         WHERE gr_unique_id = \'""" + gr_unique_id + """\';""", 'post', conn)
 
             execute(""" UPDATE actions_actions
                         SET 
-                        is_in_progress = \'""" + 'FALSE' + """\'
-                        , is_complete = \'""" + 'FALSE' + """\'
+                        is_in_progress = \'""" + 'False' + """\'
+                        , is_complete = \'""" + 'False' + """\'
                         WHERE goal_routine_id = \'""" + gr_unique_id + """\';""", 'post', conn)
 
 
@@ -2282,7 +2282,7 @@ class CreateNewUser(Resource):
                                 , \'""" + email_id + """\'
                                 , \'""" + google_auth_token + """\'
                                 , \'""" + google_refresh_token + """\'
-                                , \'""" + 'FALSE' + """\'
+                                , \'""" + 'False' + """\'
                                 , \'""" + '' + """\')""", 'post', conn)
 
                 response['message'] = 'successful'
@@ -2325,6 +2325,8 @@ class UpdateAboutMe(Resource):
             message_day = data['message_day']
             picture = data['picture']
 
+            # user_photo_url = helper_upload_meal_img(picture, user_id)
+
             if len(data['people']) > 0:
                 for i in range(len(data['people'])):
                     people_id.append(data['people'][i]['ta_people_id'])
@@ -2347,7 +2349,7 @@ class UpdateAboutMe(Resource):
             execute("""UPDATE  users
                             SET 
                                 user_first_name = \'""" + first_name + """\'
-                                , user_have_pic = \'""" + str(have_pic) + """\'
+                                , user_have_pic = \'""" + str(have_pic).title() + """\'
                                 , user_picture = \'""" + str(picture) + """\'
                                 , message_card = \'""" + str(message_card) + """\'
                                 , message_day = \'""" + str(message_day) + """\'
@@ -2387,9 +2389,9 @@ class UpdateAboutMe(Resource):
                                     SET 
                                         r_timestamp = \'""" + timestamp + """\'
                                         , relation_type = \'""" + people_relationship[i] + """\'
-                                        , ta_have_pic =  \'""" + str(people_have_pic[i]) + """\'
+                                        , ta_have_pic =  \'""" + str(people_have_pic[i]).title() + """\'
                                         , ta_picture = \'""" + people_pic[i] + """\'
-                                        , important = \'""" + people_important[i] + """\'
+                                        , important = \'""" + str(people_important[i]).title() + """\'
                                     WHERE ta_people_id = \'""" + people_id[i] + """\' 
                                     and user_uid = \'""" + user_id + """\' ;""", 'post', conn)
 
@@ -2414,9 +2416,9 @@ class UpdateAboutMe(Resource):
                                         , \'""" + user_id + """\'
                                         , \'""" + timestamp + """\'
                                         , \'""" + people_relationship[i] + """\'
-                                        , \'""" + str(people_have_pic[i]) + """\'
+                                        , \'""" + str(people_have_pic[i]).title() + """\'
                                         , \'""" + people_pic[i] + """\'
-                                        , \'""" + people_important[i] + """\'
+                                        , \'""" + str(people_important[i]).title() + """\'
                                         , \'""" + str(0) + """\');""", 'post', conn)
             
             response['message'] = 'successful'
@@ -2482,9 +2484,9 @@ class UpdateNameTimeZone(Resource):
                         , \'""" + ta_people_id + """\'
                         , \'""" + user_unique_id + """\'
                         , \'""" + 'advisor' + """\'
-                        , \'""" + 'FALSE' + """\'
+                        , \'""" + 'False' + """\'
                         , \'""" + '' + """\'
-                        , \'""" + 'FALSE' + """\'
+                        , \'""" + 'False' + """\'
                         , \'""" + str(1) + """\');""", 'post', conn)
 
             response['message'] = 'successful'
@@ -2544,7 +2546,7 @@ class Usertoken(Resource):
                         users WHERE user_unique_id = \'""" + user_id + """\';"""
             
             items = execute(query, 'get', conn)
-
+            print(items)
             response['message'] = 'successful'
             response['email_id'] = items['result'][0]['user_email_id']
             response['google_auth_token'] = items['result'][0]['google_auth_token']
@@ -2658,6 +2660,127 @@ class AddCoordinates(Resource):
         finally:
             disconnect(conn)
 
+# Add new Goal/Routine of a user
+class UpdateGRWatchMobile(Resource):
+    def post(self):    
+        response = {}
+        items = {}
+
+        try:
+            conn = connect()
+            data = request.get_json(force=True)
+
+            datetime_completed = data['datetime_completed']
+            datetime_started = data['datetime_started']
+            id = data['id']
+            print(id)
+            is_complete = data['is_complete']
+            is_in_progress = data['is_in_progress']
+
+            # Update G/R to database
+            query = """UPDATE goals_routines
+                            SET 
+                                is_complete = \'""" + str(is_complete).title() + """\'
+                                ,is_in_progress = \'""" + str(is_in_progress).title() + """\'
+                                ,datetime_started = \'""" + datetime_started + """\'
+                                ,datetime_completed = \'""" + datetime_completed + """\'
+                        WHERE gr_unique_id = \'""" +id+ """\';"""
+            items = execute(query, 'post', conn)
+
+            response['message'] = 'Update to Goal and Routine was Successful'
+            return response, 200
+        except:
+            raise BadRequest('Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
+class UpdateATWatchMobile(Resource):
+    def post(self):    
+        response = {}
+        items = {}
+
+        try:
+            conn = connect()
+            data = request.get_json(force=True)
+
+            datetime_completed = data['datetime_completed']
+            datetime_started = data['datetime_started']
+            id = data['id']
+            is_complete = data['is_complete']
+            is_in_progress = data['is_in_progress']
+
+            # gr_id_response = execute("""SELECT goal_routine_id from actions_tasks where at_unique_id = \'""" +id+ """\'""", 'get', conn)
+            # gr_id = gr_id_response['result'][0]['goal_routine_id']
+
+            query = """UPDATE actions_tasks
+                        SET  
+                             is_complete = \'""" + str(is_complete).title() + """\'
+                            , is_in_progress = \'""" + str(is_in_progress).title() + """\'
+                            , datetime_completed =  \'""" + datetime_completed + """\'
+                            , datetime_started = \'""" + datetime_started + """\'
+                            WHERE at_unique_id = \'""" +id+ """\';"""
+            print(query)
+            items = execute(query, 'post', conn)
+            response['message'] = 'Update action and task successful'
+
+            return response, 200
+        except:
+            raise BadRequest('Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
+# # Creating new user
+# class UpdateTokens(Resource):
+#     def post(self):    
+#         response = {}
+#         items = {}
+#         timestamp = getNow()
+#         try:
+#             conn = connect()
+#             data = request.get_json(force=True)
+
+           
+#             email_id = data['email_id']
+#             google_auth_token = data['google_auth_token']
+#             google_refresh_token = data['google_refresh_token']
+
+#             user_id_response = execute("""SELECT user_unique_id FROM users
+#                                             WHERE user_email_id = \'""" +email_id+ """\';""", 'get', conn)
+            
+#             if len(user_id_response['result']) > 0:
+#                 response['message'] = 'User already exists'
+
+#             else:
+#                 user_id_response = execute("CAll get_user_id;", 'get', conn)
+#                 new_user_id = user_id_response['result'][0]['new_id']
+
+
+#                 execute("""INSERT INTO users(
+#                                 user_unique_id
+#                                 , user_timestamp
+#                                 , user_email_id
+#                                 , google_auth_token
+#                                 , google_refresh_token
+#                                 , user_have_pic
+#                                 , user_picture)
+#                             VALUES ( 
+#                                 \'""" + new_user_id + """\'
+#                                 , \'""" + timestamp + """\'
+#                                 , \'""" + email_id + """\'
+#                                 , \'""" + google_auth_token + """\'
+#                                 , \'""" + google_refresh_token + """\'
+#                                 , \'""" + 'False' + """\'
+#                                 , \'""" + '' + """\')""", 'post', conn)
+
+#                 response['message'] = 'successful'
+#                 response['result'] = new_user_id
+
+#             return response, 200
+#         except:
+#             raise BadRequest('Request failed, please try again later.')
+#         finally:
+#             disconnect(conn)
+
 
 # Define API routes
 
@@ -2706,6 +2829,8 @@ api.add_resource(CreateNewUser, '/api/v2/addNewUser') #working
 api.add_resource(UpdateAboutMe, '/api/v2/updateAboutMe')
 api.add_resource(UpdateNameTimeZone, '/api/v2/updateNewUser')
 api.add_resource(AddCoordinates, '/api/v2/addCoordinates')
+api.add_resource(UpdateGRWatchMobile, '/api/v2/udpateGRWatchMobile')
+api.add_resource(UpdateATWatchMobile, '/api/v2/updateATWatchMobile')
 
 
 # api.add_resource(CreateNewUsers, '/api/v2/createNewUser')
