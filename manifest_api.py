@@ -2275,7 +2275,8 @@ class CreateNewUser(Resource):
                                 , google_auth_token
                                 , google_refresh_token
                                 , user_have_pic
-                                , user_picture)
+                                , user_picture
+                                , user_social_media)
                             VALUES ( 
                                 \'""" + new_user_id + """\'
                                 , \'""" + timestamp + """\'
@@ -2283,7 +2284,8 @@ class CreateNewUser(Resource):
                                 , \'""" + google_auth_token + """\'
                                 , \'""" + google_refresh_token + """\'
                                 , \'""" + 'False' + """\'
-                                , \'""" + '' + """\')""", 'post', conn)
+                                , \'""" + '' + """\'
+                                , , \'""" + 'GOOGLE' + """\')""", 'post', conn)
 
                 response['message'] = 'successful'
                 response['result'] = new_user_id
@@ -2781,6 +2783,337 @@ class UpdateATWatchMobile(Resource):
 #         finally:
 #             disconnect(conn)
 
+class Login(Resource):
+    def post(self):
+        response = {}
+        try:
+            conn = connect()
+            data = request.get_json(force=True)
+
+            email = data['email']
+            password = data.get('password')
+            refresh_token = data.get('token')
+            signup_platform = data.get('signup_platform')
+
+            query = """
+                    SELECT user_unique_id,
+                        user_last_name,
+                        user_first_name,
+                        user_email_id,
+                        user_social_media,
+                        google_auth_token,
+                        google_refresh_token
+                    FROM users
+                    WHERE user_email_id = \'""" + email + """\';
+                    """
+            items = execute(query, 'get', conn)
+            # print('Password', password)
+            print(items)
+
+            if items['code'] != 280:
+                response['message'] = "Internal Server Error."
+                response['code'] = 500
+                return response
+            elif not items['result']:
+                items['message'] = 'Email Not Found. Please signup'
+                items['result'] = ''
+                items['code'] = 404
+                return items
+            else:
+                print(items['result'])
+                print('sc: ', items['result'][0]['user_social_media'])
+
+
+            # #     # checks if login was by social media
+            #     if password and items['result'][0]['user_social_media'] != 'NULL' and items['result'][0]['user_social_media'] != None:
+            #         response['message'] = "Need to login by Social Media"
+            #         response['code'] = 401
+            #         return response
+
+            #    # nothing to check
+            #     elif (password is None and refresh_token is None) or (password is None and items['result'][0]['user_social_media'] == 'NULL'):
+            #         response['message'] = "Enter password else login from social media"
+            #         response['code'] = 405
+            #         return response
+
+            #     # compare passwords if user_social_media is false
+            #     elif (items['result'][0]['user_social_media'] == 'NULL' or items['result'][0]['user_social_media'] == None) and password is not None:
+
+            #         if items['result'][0]['password_hashed'] != password:
+            #             items['message'] = "Wrong password"
+            #             items['result'] = ''
+            #             items['code'] = 406
+            #             return items
+
+            #         # if ((items['result'][0]['email_verified']) == '0') or (items['result'][0]['email_verified'] == "FALSE"):
+            #         #     response['message'] = "Account need to be verified by email."
+            #         #     response['code'] = 407
+            #         #     return response
+
+            #     # compare the refresh token because it never expire.
+            #     elif (items['result'][0]['user_social_media']) != 'NULL':
+            #         '''
+            #         keep
+            #         if signup_platform != items['result'][0]['user_social_media']:
+            #             items['message'] = "Wrong social media used for signup. Use \'" + items['result'][0]['user_social_media'] + "\'."
+            #             items['result'] = ''
+            #             items['code'] = 401
+            #             return items
+            #         '''
+            #         if (items['result'][0]['google_refresh_token'] != refresh_token):
+            #             print("From database", items['result'][0]['google_refresh_token'])
+            #             print("from postman", refresh_token)
+            #             items['message'] = "Cannot Authenticated. Token is invalid"
+            #             items['result'] = ''
+            #             items['code'] = 408
+            #             return items
+
+            #     else:
+            #         string = " Cannot compare the password or refresh token while log in. "
+            #         print("*" * (len(string) + 10))
+            #         print(string.center(len(string) + 10, "*"))
+            #         print("*" * (len(string) + 10))
+            #         response['message'] = string
+            #         response['code'] = 500
+            #         return response
+            #     # del items['result'][0]['password_hashed']
+            #     # del items['result'][0]['email_verified']
+
+                query = "SELECT * from users WHERE user_email_id = \'" + email + "\';"
+                items = execute(query, 'get', conn)
+                items['message'] = "Authenticated successfully."
+                items['code'] = 200
+                return items
+        except:
+            raise BadRequest('Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
+# class access_refresh_update(Resource):
+
+#     def post(self):
+
+#         try:
+#             conn = connect()
+#             data = request.get_json(force=True)
+
+#             query = """
+#                     UPDATE users SET google_access_token = \'""" + data['access_token'] + """\'
+#                     , google_refresh_token = \'""" + data['refresh_token'] + """\'
+#                     , user_timestamp =  \'""" + data['social_timestamp'] + """\' 
+#                     WHERE (user_unique_id = \'""" + data['uid'] + """\'); ;
+#                     """
+#             print(query)
+#             items = execute(query, 'post', conn)
+#             if items['code'] == 281:
+#                 items['message'] = 'Access and refresh token updated successfully'
+#                 print(items['code'])
+#                 items['code'] = 200
+#             else:
+#                 items['message'] = 'Check sql query'
+#                 items['code'] = 400
+
+
+#             return items
+
+#         except:
+#             raise BadRequest('Request failed, please try again later.')
+#         finally:
+#             disconnect(conn)
+
+
+# class SignUp(Resource):
+#     def post(self):
+#         response = {}
+#         items = []
+#         try:
+#             conn = connect()
+#             data = request.get_json(force=True)
+#             print(data)
+#             email = data['email']
+#             firstName = data['first_name']
+#             lastName = data['last_name']
+#             phone = data['phone_number']
+#             # address = data['address']
+#             # unit = data['unit'] if data.get('unit') is not None else 'NULL'
+#             # city = data['city']
+#             # state = data['state']
+#             # zip_code = data['zip_code']
+#             # latitude = data['latitude']
+#             # longitude = data['longitude']
+#             # referral = data['referral_source']
+#             # role = data['role']
+#             social_timestamp = data['social_timestamp'] if data.get('social_timestamp') is not None else 'NULL'
+#             cust_id = data['cust_id'] if data.get('cust_id') is not None else 'NULL'
+
+#             # if data.get('social') is None or data.get('social') == "FALSE" or data.get('social') == False:
+#             #     social_signup = False
+#             # else:
+#             #     social_signup = True
+
+
+#             get_user_id_query = "CALL get_user_id();"
+#             NewUserIDresponse = execute(get_user_id_query, 'get', conn)
+
+#             if NewUserIDresponse['code'] == 490:
+#                 string = " Cannot get new User id. "
+#                 print("*" * (len(string) + 10))
+#                 print(string.center(len(string) + 10, "*"))
+#                 print("*" * (len(string) + 10))
+#                 response['message'] = "Internal Server Error."
+#                 return response, 500
+#             NewUserID = NewUserIDresponse['result'][0]['new_id']
+#             social_signup  = True
+
+#             if social_signup == False:
+
+#                 salt = (datetime.now()).strftime("%Y-%m-%d %H:%M:%S")
+
+#                 password = sha512((data['password'] + salt).encode()).hexdigest()
+#                 print('password------', password)
+#                 algorithm = "SHA512"
+#                 access_token = 'NULL'
+#                 refresh_token = 'NULL'
+#                 user_social_signup = 'NULL'
+#             else:
+
+#                 access_token = data['access_token']
+#                 refresh_token = data['refresh_token']
+#                 # salt = 'NULL'
+#                 # password = 'NULL'
+#                 # algorithm = 'NULL'
+#                 user_social_signup = data['social']
+
+#             if cust_id != 'NULL' and cust_id:
+
+#                 NewUserID = cust_id
+
+#                 query = '''
+#                             SELECT google_access_token, google_refresh_token
+#                             FROM users
+#                             WHERE user_unique_id = \'''' + cust_id + '''\';
+#                        '''
+#                 it = execute(query, 'get', conn)
+#                 print('it-------', it)
+
+#                 access_token = it['result'][0]['google_access_token']
+#                 refresh_token = it['result'][0]['google_refresh_token']
+
+
+#                 customer_insert_query =  ['''
+#                                     UPDATE users 
+#                                     SET 
+#                                     customer_created_at = \'''' + (datetime.now()).strftime("%Y-%m-%d %H:%M:%S") + '''\',
+#                                     user_first_name = \'''' + firstName + '''\',
+#                                     user_last_name = \'''' + lastName + '''\',
+#                                     user_social_media = \'''' + user_social_signup + '''\',
+#                                     user_timestamp  =  \'''' + social_timestamp + '''\'
+#                                     WHERE user_unique_id = \'''' + cust_id + '''\';
+#                                     ''']
+
+
+#             else:
+
+#                 # check if there is a same customer_id existing
+#                 query = """
+#                         SELECT user_email_id FROM users
+#                         WHERE user_email_id = \'""" + email + "\';"
+#                 print('email---------')
+#                 items = execute(query, 'get', conn)
+#                 if items['result']:
+
+#                     items['result'] = ""
+#                     items['code'] = 409
+#                     items['message'] = "Email address has already been taken."
+
+#                     return items
+
+#                 if items['code'] == 480:
+
+#                     items['result'] = ""
+#                     items['code'] = 480
+#                     items['message'] = "Internal Server Error."
+#                     return items
+
+
+#                 # write everything to database
+#                 customer_insert_query = ["""
+#                                         INSERT INTO sf.customers 
+#                                         (
+#                                             user_unique_id,
+#                                             user_first_name,
+#                                             user_last_name,
+#                                             customer_email_id,
+#                                             user_social_media,
+#                                             google_access_token,
+#                                             user_timestamp,
+#                                             google_refresh_token
+#                                         )
+#                                         VALUES
+#                                         (
+                                        
+#                                             \'""" + NewUserID + """\',
+#                                             \'""" + firstName + """\',
+#                                             \'""" + lastName + """\',
+#                                             \'""" + email + """\',
+#                                             \'""" + user_social_signup + """\',
+#                                             \'""" + access_token + """\',
+#                                             \'""" + social_timestamp + """\',
+#                                             \'""" + refresh_token + """\');"""]
+
+#             items = execute(customer_insert_query[0], 'post', conn)
+
+#             if items['code'] != 281:
+#                 items['result'] = ""
+#                 items['code'] = 480
+#                 items['message'] = "Error while inserting values in database"
+
+#                 return items
+
+
+#             items['result'] = {
+#                 'first_name': firstName,
+#                 'last_name': lastName,
+#                 'customer_uid': NewUserID,
+#                 'access_token': access_token,
+#                 'refresh_token': refresh_token
+#             }
+#             items['message'] = 'Signup successful'
+#             items['code'] = 200
+
+#             # Twilio sms service
+
+#             #resp = url_for('sms_service', phone_num='+17327818408', _external=True)
+#             #resp = sms_service('+1'+phone, firstName)
+#             #print("resp --------", resp)
+
+
+
+#             print('sss-----', social_signup)
+
+#             if social_signup == False:
+#                 token = s.dumps(email)
+#                 msg = Message("Email Verification", sender='ptydtesting@gmail.com', recipients=[email])
+
+#                 print('MESSAGE----', msg)
+#                 print('message complete')
+#                 link = url_for('confirm', token=token, hashed=password, _external=True)
+#                 print('link---', link)
+#                 msg.body = "Click on the link {} to verify your email address.".format(link)
+#                 print('msg-bd----', msg.body)
+#                 mail.send(msg)
+
+
+
+#             return items
+#         except:
+#             print("Error happened while Sign Up")
+#             if "NewUserID" in locals():
+#                 execute("""DELETE FROM users WHERE user_unique_id = '""" + NewUserID + """';""", 'post', conn)
+#             raise BadRequest('Request failed, please try again later.')
+#         finally:
+#             disconnect(conn)
+
 
 # Define API routes
 
@@ -2831,6 +3164,8 @@ api.add_resource(UpdateNameTimeZone, '/api/v2/updateNewUser')
 api.add_resource(AddCoordinates, '/api/v2/addCoordinates')
 api.add_resource(UpdateGRWatchMobile, '/api/v2/udpateGRWatchMobile')
 api.add_resource(UpdateATWatchMobile, '/api/v2/updateATWatchMobile')
+api.add_resource(Login, '/api/v2/login')
+# api.add_resource(access_refresh_update, '/api/v2/accessRefreshUpdate')
 
 
 # api.add_resource(CreateNewUsers, '/api/v2/createNewUser')
