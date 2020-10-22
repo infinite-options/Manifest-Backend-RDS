@@ -155,7 +155,8 @@ def execute(sql, cmd, conn, skipSerialization=False):
 
 def helper_upload_meal_img(file, key):
     bucket = S3_BUCKET
-    if file and allowed_file(file.name):
+  
+    if file and allowed_file(file.filename):
         filename = 'https://s3-us-west-1.amazonaws.com/' \
                    + str(bucket) + '/' + str(key)
 
@@ -2433,6 +2434,144 @@ class UpdateAboutMe(Resource):
             disconnect(conn)
 
 # Update new user
+class UpdateAboutMe2(Resource):
+    def post(self):    
+        response = {}
+        items = {}
+
+        try:
+            conn = connect()
+
+            timestamp = getNow()
+
+            people_id = []
+            people_have_pic = []
+            people_name = []
+            people_pic = []
+            people_relationship = []
+            people_important = []
+            people_user_id = []
+            people_phone_number = []
+            relation_type = []
+
+            user_id = request.form.get('user_id')
+            first_name = request.form.get('first_name')
+            last_name = request.form.get('last_name')
+            have_pic = request.form.get('have_pic')
+            message_card =  request.form.get('message_card')
+            message_day = request.form.get('message_day')
+            picture = request.files.get('picture')
+            people = request.form.get('people')
+            time_settings = request.form.get("timeSettings")
+
+            user_photo_url = helper_upload_meal_img(picture, user_id)
+
+            people = json.loads(people)
+            if len(people) > 0:
+                for i in range(len(people)):
+                    people_id.append(people[i]['ta_people_id'])
+                    people_name.append(people[i]['name'])
+                    people_relationship.append(people[i]['relationship'])
+                    people_phone_number.append(people[i]['phone_number'])
+                    people_important.append(people[i]['important'])
+                    people_have_pic.append(people[i]['have_pic'])
+                    people_pic.append(people[i]['pic'])
+
+            time_settings = json.loads(time_settings)
+            afternoon_time = time_settings["afternoon"]
+            day_end = time_settings["dayEnd"]
+            day_start = time_settings["dayStart"]
+            evening_time = time_settings["evening"]
+            morning_time = time_settings["morning"]
+            night_time = time_settings["night"]
+            time_zone = time_settings["timeZone"]
+
+            # Updating user data
+            execute("""UPDATE  users
+                            SET 
+                                user_first_name = \'""" + first_name + """\'
+                                , user_timestamp = \'""" + timestamp + """\'
+                                , user_have_pic = \'""" + str(have_pic).title() + """\'
+                                , user_picture = \'""" + str(user_photo_url) + """\'
+                                , message_card = \'""" + str(message_card) + """\'
+                                , message_day = \'""" + str(message_day) + """\'
+                                , user_last_name =  \'""" + last_name + """\'
+                                , time_zone = \'""" + str(time_zone) + """\'
+                                , morning_time = \'""" + str(morning_time) + """\'
+                                , afternoon_time = \'""" + str(afternoon_time) + """\'
+                                , evening_time = \'""" + str(evening_time) + """\'
+                                , night_time = \'""" + str(night_time) + """\'
+                                , day_start = \'""" + str(day_start) + """\'
+                                , day_end = \'""" + str(day_end) + """\'
+                            WHERE user_unique_id = \'""" + user_id + """\' ;""", 'post', conn)
+            
+            for i in range(len(people_id)):
+                list = people_name[i].split(" ", 1)
+                first_name = list[0]
+                if len(list) == 1:
+                    last_name = ''
+                else:
+                    last_name = list[1]
+
+                execute("""UPDATE  ta_people
+                            SET 
+                                ta_first_name = \'""" + first_name + """\'
+                                , ta_timestamp = \'""" + timestamp + """\'
+                                , ta_last_name = \'""" + last_name + """\'
+                                , ta_phone_number =  \'""" + str(people_phone_number[i]) + """\'
+                            WHERE ta_unique_id = \'""" + people_id[i] + """\' ;""", 'post', conn)
+
+                relationResponse = execute("""SELECT id FROM relationship 
+                            WHERE ta_people_id = \'""" + people_id[i] + """\' 
+                            and user_uid = \'""" + user_id + """\';""", 'get', conn)
+                                            
+                if len(relationResponse['result']) > 0:
+                
+                    items = execute("""UPDATE  relationship
+                                    SET 
+                                        r_timestamp = \'""" + timestamp + """\'
+                                        , relation_type = \'""" + people_relationship[i] + """\'
+                                        , ta_have_pic =  \'""" + str(people_have_pic[i]).title() + """\'
+                                        , ta_picture = \'""" + people_pic[i] + """\'
+                                        , important = \'""" + str(people_important[i]).title() + """\'
+                                    WHERE ta_people_id = \'""" + people_id[i] + """\' 
+                                    and user_uid = \'""" + user_id + """\' ;""", 'post', conn)
+
+                if len(relationResponse['result']) == 0:
+                    NewRelationIDresponse = execute("Call get_relation_id;", 'get', conn)
+                    NewRelationID = NewRelationIDresponse['result'][0]['new_id']
+
+                    execute("""INSERT INTO relationship
+                                        (id
+                                        , ta_people_id
+                                        , user_uid
+                                        , r_timestamp
+                                        , relation_type
+                                        , ta_have_pic
+                                        , ta_picture
+                                        , important
+                                        , advisor)
+                                        VALUES 
+                                        ( \'""" + NewRelationID + """\'
+                                        , \'""" + people_id[i] + """\'
+                                        , \'""" + user_id + """\'
+                                        , \'""" + timestamp + """\'
+                                        , \'""" + people_relationship[i] + """\'
+                                        , \'""" + str(people_have_pic[i]).title() + """\'
+                                        , \'""" + people_pic[i] + """\'
+                                        , \'""" + str(people_important[i]).title() + """\'
+                                        , \'""" + str(0) + """\');""", 'post', conn)
+            
+            response['message'] = 'successful'
+            response['result'] = 'Update to about me successful'
+
+            return response, 200
+        except:
+            raise BadRequest('Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
+# Update new user
 class UpdateNameTimeZone(Resource):
     def post(self):    
         response = {}
@@ -2679,15 +2818,35 @@ class UpdateGRWatchMobile(Resource):
             is_complete = data['is_complete']
             is_in_progress = data['is_in_progress']
 
-            # Update G/R to database
-            query = """UPDATE goals_routines
+
+            if datetime_started == "":
+                query = """UPDATE goals_routines
+                            SET 
+                                is_complete = \'""" + str(is_complete).title() + """\'
+                                ,is_in_progress = \'""" + str(is_in_progress).title() + """\'
+                                ,datetime_completed = \'""" + datetime_completed + """\'
+                        WHERE gr_unique_id = \'""" +id+ """\';"""
+                execute(query, 'post', conn)
+
+            elif datetime_completed == "":
+                query = """UPDATE goals_routines
                             SET 
                                 is_complete = \'""" + str(is_complete).title() + """\'
                                 ,is_in_progress = \'""" + str(is_in_progress).title() + """\'
                                 ,datetime_started = \'""" + datetime_started + """\'
-                                ,datetime_completed = \'""" + datetime_completed + """\'
                         WHERE gr_unique_id = \'""" +id+ """\';"""
-            items = execute(query, 'post', conn)
+                execute(query, 'post', conn)
+
+            else:
+                # Update G/R to database
+                query = """UPDATE goals_routines
+                                SET 
+                                    is_complete = \'""" + str(is_complete).title() + """\'
+                                    ,is_in_progress = \'""" + str(is_in_progress).title() + """\'
+                                    ,datetime_started = \'""" + datetime_started + """\'
+                                    ,datetime_completed = \'""" + datetime_completed + """\'
+                            WHERE gr_unique_id = \'""" +id+ """\';"""
+                execute(query, 'post', conn)
 
             response['message'] = 'Update to Goal and Routine was Successful'
             return response, 200
@@ -2711,18 +2870,32 @@ class UpdateATWatchMobile(Resource):
             is_complete = data['is_complete']
             is_in_progress = data['is_in_progress']
 
-            # gr_id_response = execute("""SELECT goal_routine_id from actions_tasks where at_unique_id = \'""" +id+ """\'""", 'get', conn)
-            # gr_id = gr_id_response['result'][0]['goal_routine_id']
+            if datetime_started == "":
+                query = """UPDATE actions_tasks
+                            SET  
+                                is_complete = \'""" + str(is_complete).title() + """\'
+                                , datetime_completed =  \'""" + datetime_completed + """\'
+                                WHERE at_unique_id = \'""" +id+ """\';"""
+                execute(query, 'post', conn)
 
-            query = """UPDATE actions_tasks
-                        SET  
-                             is_complete = \'""" + str(is_complete).title() + """\'
-                            , is_in_progress = \'""" + str(is_in_progress).title() + """\'
-                            , datetime_completed =  \'""" + datetime_completed + """\'
-                            , datetime_started = \'""" + datetime_started + """\'
-                            WHERE at_unique_id = \'""" +id+ """\';"""
-            print(query)
-            items = execute(query, 'post', conn)
+            elif datetime_completed == "":
+                query = """UPDATE actions_tasks
+                            SET  
+                                is_complete = \'""" + str(is_complete).title() + """\'
+                                , datetime_started = \'""" + datetime_started + """\'
+                                WHERE at_unique_id = \'""" +id+ """\';"""
+                execute(query, 'post', conn)
+
+            else:
+
+                query = """UPDATE actions_tasks
+                            SET  
+                                is_complete = \'""" + str(is_complete).title() + """\'
+                                , datetime_completed =  \'""" + datetime_completed + """\'
+                                , datetime_started = \'""" + datetime_started + """\'
+                                WHERE at_unique_id = \'""" +id+ """\';"""
+                execute(query, 'post', conn)
+
             response['message'] = 'Update action and task successful'
 
             return response, 200
@@ -2791,22 +2964,45 @@ class Login(Resource):
             data = request.get_json(force=True)
 
             email = data['email']
-            password = data.get('password')
-            refresh_token = data.get('token')
+            social_id = data['social_id']
+            # password = data.get('password')
+            refresh_token = data.get('mobile_refresh_token')
+            access_token = data.get('mobile_access_token')
             signup_platform = data.get('signup_platform')
 
-            query = """
-                    SELECT user_unique_id,
-                        user_last_name,
-                        user_first_name,
-                        user_email_id,
-                        user_social_media,
-                        google_auth_token,
-                        google_refresh_token
-                    FROM users
-                    WHERE user_email_id = \'""" + email + """\';
-                    """
-            items = execute(query, 'get', conn)
+            if email == "":
+
+                query = """
+                        SELECT user_unique_id,
+                            user_last_name,
+                            user_first_name,
+                            user_email_id,
+                            user_social_media,
+                            google_auth_token,
+                            google_refresh_token
+                        FROM users
+                        WHERE social_id = \'""" + social_id + """\';
+                        """
+              
+                items = execute(query, 'get', conn)
+               
+
+            else: 
+                query = """
+                        SELECT user_unique_id,
+                            user_last_name,
+                            user_first_name,
+                            user_email_id,
+                            user_social_media,
+                            google_auth_token,
+                            google_refresh_token
+                        FROM users
+                        WHERE user_email_id = \'""" + email + """\';
+                        """
+
+              
+                items = execute(query, 'get', conn)
+
             # print('Password', password)
             print(items)
 
@@ -2815,15 +3011,14 @@ class Login(Resource):
                 response['code'] = 500
                 return response
             elif not items['result']:
-                items['message'] = 'Email Not Found. Please signup'
+                items['message'] = 'User Not Found. Please signup'
                 items['result'] = ''
                 items['code'] = 404
                 return items
             else:
                 print(items['result'])
                 print('sc: ', items['result'][0]['user_social_media'])
-
-
+                  
             # #     # checks if login was by social media
             #     if password and items['result'][0]['user_social_media'] != 'NULL' and items['result'][0]['user_social_media'] != None:
             #         response['message'] = "Need to login by Social Media"
@@ -2879,8 +3074,26 @@ class Login(Resource):
             #     # del items['result'][0]['password_hashed']
             #     # del items['result'][0]['email_verified']
 
-                query = "SELECT * from users WHERE user_email_id = \'" + email + "\';"
-                items = execute(query, 'get', conn)
+
+
+                if email == "":
+                    execute("""UPDATE users SET mobile_refresh_token = \'""" +refresh_token+ """\'
+                                            , mobile_auth_token =  \'""" +access_token+ """\'
+                            WHERE social_id =  \'""" +social_id+ """\'""", 'post', conn)
+                    query = "SELECT * from users WHERE social_id = \'" + social_id + "\';"
+                    items = execute(query, 'get', conn)
+                else:
+                    print(email)
+                    execute("""UPDATE users SET mobile_refresh_token = \'""" +refresh_token+ """\'
+                                            , mobile_auth_token =  \'""" +access_token+ """\'
+                                            , social_id =  \'""" +social_id+ """\'
+                                            , user_social_media =  \'""" +signup_platform+ """\'
+
+
+                            WHERE user_email_id =  \'""" +email+ """\'""", 'post', conn)
+
+                    query = "SELECT * from users WHERE user_email_id = \'" + email + "\';"
+                    items = execute(query, 'get', conn)
                 items['message'] = "Authenticated successfully."
                 items['code'] = 200
                 return items
@@ -3165,6 +3378,7 @@ api.add_resource(AddCoordinates, '/api/v2/addCoordinates')
 api.add_resource(UpdateGRWatchMobile, '/api/v2/udpateGRWatchMobile')
 api.add_resource(UpdateATWatchMobile, '/api/v2/updateATWatchMobile')
 api.add_resource(Login, '/api/v2/login')
+api.add_resource(UpdateAboutMe2, '/api/v2/update')
 # api.add_resource(access_refresh_update, '/api/v2/accessRefreshUpdate')
 
 
