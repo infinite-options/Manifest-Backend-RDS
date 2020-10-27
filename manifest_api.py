@@ -5,6 +5,16 @@ from flask_mail import Mail, Message  # used for email
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadTimeSignature
 from flask_cors import CORS
 import boto3, botocore
+import pickle
+import os.path
+from googleapiclient.discovery import build
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
+import urllib.parse
+import urllib.request
+import base64
+from oauth2client import GOOGLE_REVOKE_URI, GOOGLE_TOKEN_URI, client
+
 
 from werkzeug.exceptions import BadRequest, NotFound
 
@@ -16,7 +26,7 @@ from math import ceil
 import string
 import random
 import os
-import hashlib
+import hashlib 
 
 #regex
 import re
@@ -58,11 +68,13 @@ app.config['MAIL_USE_SSL'] = True
 # app.config['MAIL_DEBUG'] = True
 # app.config['MAIL_SUPPRESS_SEND'] = False
 # app.config['TESTING'] = False
+SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
 
 mail = Mail(app)
 s = URLSafeTimedSerializer('thisisaverysecretkey')
 # API
 api = Api(app)
+
 
 # convert to UTC time zone when testing in local time zone
 utc = pytz.utc
@@ -2286,7 +2298,8 @@ class CreateNewUser(Resource):
                                 , \'""" + google_refresh_token + """\'
                                 , \'""" + 'False' + """\'
                                 , \'""" + '' + """\'
-                                , , \'""" + 'GOOGLE' + """\')""", 'post', conn)
+                                , \'""" + 'GOOGLE' + """\')""", 'post', conn)
+                
 
                 response['message'] = 'successful'
                 response['result'] = new_user_id
@@ -2597,7 +2610,7 @@ class UpdateNameTimeZone(Resource):
                                 user_first_name = \'""" + first_name + """\'
                                 , user_last_name =  \'""" + last_name + """\'
                                 , time_zone = \'""" + time_zone + """\'
-                                , user_timestamp = \'""" + time_zone + """\'
+                                , user_timestamp = \'""" + timestamp + """\'
                                 , morning_time = \'""" + '06:00' + """\'
                                 , afternoon_time = \'""" + '11:00' + """\'
                                 , evening_time = \'""" + '16:00' + """\'
@@ -3102,6 +3115,192 @@ class Login(Resource):
         finally:
             disconnect(conn)
 
+class GoogleCalenderEvents(Resource):
+    def post(self):
+
+        try:
+            conn = connect()
+            data = request.get_json(force=True)
+
+            timestamp = getNow()
+            user_unique_id = data["id"]
+            start = data["start"]
+            end = data["end"]
+
+            items = execute("""SELECT user_email_id, google_refresh_token, google_auth_token, access_issue_time, access_expires_in FROM users WHERE user_unique_id = \'""" +user_unique_id+ """\'""", 'get', conn )
+            
+            if len(items['result']) == 0:
+                return "No such user exists"
+            print(items)
+            if items['result'][0]['access_expires_in'] == None or items['result'][0]['access_issue_time'] == None:
+                f = open('credentials.json',)
+                data = json.load(f)
+                client_id = data['web']['client_id']
+                client_secret = data['web']['client_secret']
+                refresh_token = items['result'][0]['google_refresh_token']
+        
+                params = {
+                    "grant_type": "refresh_token",
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "refresh_token": items['result'][0]['google_refresh_token'],
+                }
+            
+                authorization_url = "https://www.googleapis.com/oauth2/v4/token"
+                r = requests.post(authorization_url, data=params)
+                auth_token = ""
+                if r.ok:
+                        auth_token = r.json()['access_token']
+                expires_in = r.json()['expires_in']
+            
+                execute("""UPDATE users SET 
+                                google_auth_token = \'""" +str(auth_token)+ """\'
+                                , access_issue_time = \'""" +str(timestamp)+ """\'
+                                , access_expires_in = \'""" +str(expires_in)+ """\'
+                                WHERE user_unique_id = \'""" +user_unique_id+ """\';""", 'post', conn)
+                items = execute("""SELECT user_email_id, google_refresh_token, google_auth_token, access_issue_time, access_expires_in FROM users WHERE user_unique_id = \'""" +user_unique_id+ """\'""", 'get', conn )
+                print(items)
+                baseUri = "https://www.googleapis.com/calendar/v3/calendars/primary/events?orderBy=startTime&singleEvents=true&"            
+                timeMaxMin = "timeMax="+end+"&timeMin="+start
+                url = baseUri + timeMaxMin
+                bearerString = "Bearer " + items['result'][0]['google_auth_token']
+                headers = {"Authorization": bearerString, "Accept": "application/json"} 
+                response = requests.get(url, headers=headers)
+                response.raise_for_status()
+                calendars = response.json().get('items')
+                return calendars
+
+            else:
+                access_issue_min = int(items['result'][0]['access_expires_in'])/60
+                access_issue_time = datetime.strptime(items['result'][0]['access_issue_time'],"%Y-%m-%d %H:%M:%S")
+                timestamp = datetime.strptime(timestamp,"%Y-%m-%d %H:%M:%S")
+                diff = (timestamp - access_issue_time).total_seconds() / 60
+                print(diff)
+                if int(diff) > int(access_issue_min):
+                    f = open('credentials.json',)
+                    data = json.load(f)
+                    client_id = data['web']['client_id']
+                    client_secret = data['web']['client_secret']
+                    refresh_token = items['result'][0]['google_refresh_token']
+            
+                    params = {
+                        "grant_type": "refresh_token",
+                        "client_id": client_id,
+                        "client_secret": client_secret,
+                        "refresh_token": items['result'][0]['google_refresh_token'],
+                    }
+                
+                    authorization_url = "https://www.googleapis.com/oauth2/v4/token"
+                    r = requests.post(authorization_url, data=params)
+                    auth_token = ""
+                    if r.ok:
+                            auth_token = r.json()['access_token']
+                    expires_in = r.json()['expires_in']
+                
+                    execute("""UPDATE users SET 
+                                    google_auth_token = \'""" +str(auth_token)+ """\'
+                                    , access_issue_time = \'""" +str(timestamp)+ """\'
+                                    , access_expires_in = \'""" +str(expires_in)+ """\'
+                                    WHERE user_unique_id = \'""" +user_unique_id+ """\';""", 'post', conn)
+                    
+                items = execute("""SELECT user_email_id, google_refresh_token, google_auth_token, access_issue_time, access_expires_in FROM users WHERE user_unique_id = \'""" +user_unique_id+ """\'""", 'get', conn )
+                print(items)
+                baseUri = "https://www.googleapis.com/calendar/v3/calendars/primary/events?orderBy=startTime&singleEvents=true&"            
+                timeMaxMin = "timeMax="+end+"&timeMin="+start
+                url = baseUri + timeMaxMin
+                bearerString = "Bearer " + items['result'][0]['google_auth_token']
+                headers = {"Authorization": bearerString, "Accept": "application/json"} 
+                response = requests.get(url, headers=headers)
+                response.raise_for_status()
+                calendars = response.json().get('items')
+                return calendars
+          
+        except:
+            raise BadRequest('Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
+# @app.route('/test')
+# def test_api_request():
+#   if 'credentials' not in flask.session:
+#     return flask.redirect('authorize')
+
+#   # Load credentials from the session.
+#   credentials = google.oauth2.credentials.Credentials(
+#       **flask.session['credentials'])
+
+#   drive = googleapiclient.discovery.build(
+#       API_SERVICE_NAME, API_VERSION, credentials=credentials)
+
+#   files = drive.files().list().execute()
+
+#   # Save credentials back to session in case access token was refreshed.
+#   # ACTION ITEM: In a production app, you likely want to save these
+#   #              credentials in a persistent database instead.
+#   flask.session['credentials'] = credentials_to_dict(credentials)
+
+#   return flask.jsonify(**files)
+
+
+# @app.route('/oauth2callback')
+# def oauth2callback():
+#     # Specify the state when creating the flow in the callback so that it can
+#     # verified in the authorization server response.
+#     state = flask.session['state']
+
+#     flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
+#         'credentials.json', scopes=SCOPES, state=state)
+#     flow.redirect_uri = flask.url_for('oauth2callback', _external=True)
+
+#     # Use the authorization server's response to fetch the OAuth 2.0 tokens.
+#     authorization_response = flask.request.url
+#     flow.fetch_token(authorization_response=authorization_response)
+
+#     # Store credentials in the session.
+#     # ACTION ITEM: In a production app, you likely want to save these
+#     #              credentials in a persistent database instead.
+#     credentials = flow.credentials
+#     flask.session['credentials'] = credentials_to_dict(credentials)
+
+#     return flask.redirect(flask.url_for('test_api_request'))
+
+
+# @app.route('/revoke')
+# def revoke():
+#   if 'credentials' not in flask.session:
+#     return ('You need to <a href="/authorize">authorize</a> before ' +
+#             'testing the code to revoke credentials.')
+
+#   credentials = google.oauth2.credentials.Credentials(
+#     **flask.session['credentials'])
+
+#   revoke = requests.post('https://oauth2.googleapis.com/revoke',
+#       params={'token': credentials.token},
+#       headers = {'content-type': 'application/x-www-form-urlencoded'})
+
+#   status_code = getattr(revoke, 'status_code')
+#   if status_code == 200:
+#     return('Credentials successfully revoked.' + print_index_table())
+#   else:
+#     return('An error occurred.' + print_index_table())
+
+
+# @app.route('/clear')
+# def clear_credentials():
+#   if 'credentials' in flask.session:
+#     del flask.session['credentials']
+#   return ('Credentials have been cleared.<br><br>' +
+#           print_index_table())
+
+
+# def credentials_to_dict(credentials):
+#   return {'token': credentials.token,
+#           'refresh_token': credentials.refresh_token,
+#           'token_uri': credentials.token_uri,
+#           'client_id': credentials.client_id,
+#           'client_secret': credentials.client_secret,
+#           'scopes': credentials.scopes}
+
 # class access_refresh_update(Resource):
 
 #     def post(self):
@@ -3357,6 +3556,8 @@ api.add_resource(TASocialLogin, '/api/v2/loginSocialTA/<string:email_id>') #work
 api.add_resource(Usertoken, '/api/v2/usersToken/<string:user_id>') #working
 api.add_resource(UserLogin, '/api/v2/userLogin/<string:email_id>') #working
 # api.add_resource(CurrentStatus, '/api/v2/currentStatus/<string:user_id>') #working
+api.add_resource(GoogleCalenderEvents, '/api/v2/calenderEvents')
+
 
 # POST requests
 api.add_resource(AnotherTAAccess, '/api/v2/anotherTAAccess') #working
