@@ -10,11 +10,13 @@ import os.path
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
-import urllib.parse
+from urllib.parse import urlparse
 import urllib.request
 import base64
 from oauth2client import GOOGLE_REVOKE_URI, GOOGLE_TOKEN_URI, client
-
+from io import BytesIO
+from pytz import timezone
+import pytz
 
 from werkzeug.exceptions import BadRequest, NotFound
 
@@ -165,9 +167,16 @@ def execute(sql, cmd, conn, skipSerialization=False):
         # response['sql'] = sql
         return response
 
-def helper_upload_img(file, key):
+def helper_upload_img(file):
+
     bucket = S3_BUCKET
-  
+
+    salt = os.urandom(8)
+
+    dk = hashlib.pbkdf2_hmac('sha256',  (file.filename).encode('utf-8') , salt, 100000, dklen=64)
+
+    key = (salt + dk).hex()
+    
     if file and allowed_file(file.filename):
         filename = 'https://s3-us-west-1.amazonaws.com/' \
                    + str(bucket) + '/' + str(key)
@@ -182,6 +191,47 @@ def helper_upload_img(file, key):
         print(filename)
         return filename
     return None
+
+def helper_icon_img(url):
+
+    bucket = S3_BUCKET
+    response = requests.get(url, stream=True)
+    print(response)
+    if response.status_code==200:
+        raw_data = response.content
+        url_parser = urlparse(url)
+        file_name = os.path.basename(url_parser.path)
+        key = 'image' + "/" + file_name
+
+        try:
+           
+            # Write the raw data as byte in new file_name in the server
+            with open(file_name, 'wb') as new_file:
+                new_file.write(raw_data)
+    
+            # Open the server file as read mode and upload in AWS S3 Bucket.
+            data = open(file_name, 'rb')
+            upload_file = s3.put_object(
+                            Bucket=bucket,
+                            Body=data,
+                            Key=key,
+                            ACL='public-read',
+                            ContentType='image/jpeg')
+            data.close()
+            
+            # Format the return URL of upload file in S3 Bucjet
+            file_url = 'https://%s/%s/%s' % ('s3-us-west-1.amazonaws.com', bucket, key)
+        except Exception as e:
+            print("Error in file upload %s." % (str(e)))
+        
+        finally:
+            # Close and remove file from Server
+            new_file.close()
+            os.remove(file_name)
+    else:
+        print("Cannot parse url")
+  
+    return file_url
 
 def allowed_file(filename):
     """Checks if the file is allowed to upload"""
@@ -339,7 +389,7 @@ class AllUsers(Resource):
             
             # All users of a TA
         
-            query = """SELECT user_unique_id
+            query = """SELECT DISTINCT(user_unique_id)
                             , CONCAT(user_first_name, SPACE(1), user_last_name) as user_name
                             , user_email_id
                             , user_picture
@@ -461,7 +511,7 @@ class AnotherTAAccess(Resource):
                                         , \'""" + 'advisor' + """\'
                                         , \'""" + 'False' + """\'
                                         , \'""" + '' + """\'
-                                        , \'""" + 'False' + """\'
+                                        , \'""" + 'True' + """\'
                                         , \'""" + str(1) + """\');""")
             items = execute(query[1], 'post', conn)
 
@@ -508,7 +558,7 @@ class ListAllPeople(Resource):
                                 , CONCAT(user_first_name, SPACE(1), user_last_name) as user_name
                                 , ta_people_id
                                 , ta_email_id as email
-                                , user_have_pic as have_pic
+                                , ta_have_pic as have_pic
                                 , important as important
                                 , CONCAT(ta_first_name, SPACE(1), ta_last_name) as name
                                 , ta_phone_number as phone_number
@@ -533,230 +583,6 @@ class ListAllPeople(Resource):
         finally:
             disconnect(conn)
 
-# Add new Goal/Routine of a user
-class AddNewGR(Resource):
-    def post(self):    
-        response = {}
-        items = {}
-
-        try:
-            conn = connect()
-            data = request.get_json(force=True)
-
-            audio = data['audio']
-            datetime_completed = data['datetime_completed']
-            datetime_started = data['datetime_started']
-            end_day_and_time = data['end_day_and_time']
-            expected_completion_time = data['expected_completion_time']
-            user_id = data['user_id']
-            ta_id = data['ta_people_id']
-            is_available = data['is_available']
-            is_complete = data['is_complete']
-            is_displayed_today = data['is_displayed_today']
-            is_in_progress = data['is_in_progress']
-            is_persistent = data['is_persistent']
-            is_sublist_available = data['is_sublist_available']
-            is_timed = data['is_timed']
-            photo = data['photo']
-            repeat = data['repeat']
-            repeat_ends = data['repeat_ends']
-            repeat_ends_on = data['repeat_ends_on']
-            repeat_every = data['repeat_every']
-            repeat_frequency = data['repeat_frequency']
-            repeat_occurences = data['repeat_occurences']
-            repeat_week_days = data['repeat_week_days']
-            print(repeat_week_days)
-            start_day_and_time = data['start_day_and_time']
-            print(start_day_and_time)
-            ta_before_is_enable = data['ta_notifications']['before']['is_enabled']
-            print(ta_before_is_enable)
-            ta_before_is_set = data['ta_notifications']['before']['is_set']
-            ta_before_message = data['ta_notifications']['before']['message']
-            ta_before_time = data['ta_notifications']['before']['time']
-            ta_during_is_enable = data['ta_notifications']['during']['is_enabled']
-            ta_during_is_set = data['ta_notifications']['during']['is_set']
-            ta_during_message = data['ta_notifications']['during']['message']
-            print(ta_during_message)
-            ta_during_time = data['ta_notifications']['during']['time']
-            ta_after_is_enable = data['ta_notifications']['after']['is_enabled']
-            ta_after_is_set = data['ta_notifications']['after']['is_set']
-            ta_after_message = data['ta_notifications']['after']['message']
-            ta_after_time = data['ta_notifications']['after']['time']
-            gr_title = data['title']
-            print(gr_title)
-            user_before_is_enable = data['user_notifications']['before']['is_enabled']
-            user_before_is_set = data['user_notifications']['before']['is_set']
-            user_before_message = data['user_notifications']['before']['message']
-            user_before_time = data['user_notifications']['before']['time']
-            user_during_is_enable = data['user_notifications']['during']['is_enabled']
-            user_during_is_set = data['user_notifications']['during']['is_set']
-            user_during_message = data['user_notifications']['during']['message']
-            user_during_time = data['user_notifications']['during']['time']
-            user_after_is_enable = data['user_notifications']['after']['is_enabled']
-            user_after_is_set = data['user_notifications']['after']['is_set']
-            user_after_message = data['user_notifications']['after']['message']
-            user_after_time = data['user_notifications']['after']['time']
-
-            dict_week_days = {"Sunday":"False", "Monday":"False", "Tuesday":"False", "Wednesday":"False", "Thursday":"False", "Friday":"False", "Saturday":"False"}
-            for key in repeat_week_days:
-                if repeat_week_days[key] == "Sunday":
-                    dict_week_days["Sunday"] = "True"
-                if repeat_week_days[key] == "Monday":
-                    dict_week_days["Monday"] = "True"
-                if repeat_week_days[key] == "Tuesday":
-                    dict_week_days["Tuesday"] = "True"
-                if repeat_week_days[key] == "Wednesday":
-                    dict_week_days["Wednesday"] = "True"
-                if repeat_week_days[key] == "Thursday":
-                    dict_week_days["Thursday"] = "True"
-                if repeat_week_days[key] == "Friday":
-                    dict_week_days["Friday"] = "True"
-                if repeat_week_days[key] == "Saturday":
-                    dict_week_days["saturday"] = "True"
-
-            # New Goal/Routine ID
-            query = ["CALL get_gr_id;"]
-            new_gr_id_response = execute(query[0],  'get', conn)
-            new_gr_id = new_gr_id_response['result'][0]['new_id']
-
-            # Add G/R to database
-            query.append("""INSERT INTO goals_routines(gr_unique_id
-                            , gr_title
-                            , user_id
-                            , is_available
-                            , is_complete
-                            , is_in_progress
-                            , is_displayed_today
-                            , is_persistent
-                            , is_sublist_available
-                            , is_timed
-                            , photo
-                            , `repeat`
-                            , repeat_type
-                            , repeat_ends_on
-                            , repeat_every
-                            , repeat_frequency
-                            , repeat_occurences
-                            , start_day_and_time
-                            , repeat_week_days
-                            , datetime_completed
-                            , datetime_started
-                            , end_day_and_time
-                            , expected_completion_time)
-                        VALUES 
-                        ( \'""" + new_gr_id + """\'
-                        , \'""" + gr_title + """\'
-                        , \'""" + user_id + """\'
-                        , \'""" + str(is_available).title() + """\'
-                        , \'""" + str(is_complete).title() + """\'
-                        , \'""" + str(is_in_progress).title() + """\'
-                        , \'""" + str(is_displayed_today).title() + """\'
-                        , \'""" + str(is_persistent).title() + """\'
-                        , \'""" + str(is_sublist_available).title() + """\'
-                        , \'""" + str(is_timed).title() + """\'
-                        , \'""" + photo + """\'
-                        , \'""" + str(repeat) + """\'
-                        , \'""" + repeat_ends + """\'
-                        , \'""" + repeat_ends_on + """\'
-                        , \'""" + str(repeat_every) + """\'
-                        , \'""" + repeat_frequency + """\'
-                        , \'""" + str(repeat_occurences) + """\'
-                        , \'""" + start_day_and_time + """\'
-                        , \'""" + json.dumps(dict_week_days) + """\'
-                        , \'""" + datetime_completed + """\'
-                        , \'""" + datetime_started + """\'
-                        , \'""" + end_day_and_time + """\'
-                        , \'""" + expected_completion_time + """\');""")
-
-            execute(query[1], 'post', conn)
-            
-            # New Notification ID
-            new_notification_id_response = execute("CALL get_notification_id;",  'get', conn)
-            new_notfication_id = new_notification_id_response['result'][0]['new_id']
-
-            # TA notfication
-            query.append("""Insert into notifications
-                                (notification_id
-                                    , user_ta_id
-                                    , gr_at_id
-                                    , before_is_enable
-                                    , before_is_set
-                                    , before_message
-                                    , before_time
-                                    , during_is_enable
-                                    , during_is_set
-                                    , during_message
-                                    , during_time
-                                    , after_is_enable
-                                    , after_is_set
-                                    , after_message
-                                    , after_time) 
-                                VALUES
-                                (     \'""" + new_notfication_id + """\'
-                                    , \'""" + ta_id + """\'
-                                    , \'""" + new_gr_id + """\'
-                                    , \'""" + str(ta_before_is_enable).title() + """\'
-                                    , \'""" + str(ta_before_is_set).title() + """\'
-                                    , \'""" + ta_before_message + """\'
-                                    , \'""" + ta_before_time + """\'
-                                    , \'""" + str(ta_during_is_enable).title() + """\'
-                                    , \'""" + str(ta_during_is_set).title() + """\'
-                                    , \'""" + ta_during_message + """\'
-                                    , \'""" + ta_during_time + """\'
-                                    , \'""" + str(ta_after_is_enable).title() + """\'
-                                    , \'""" + str(ta_after_is_set).title() + """\'
-                                    , \'""" + ta_after_message + """\'
-                                    , \'""" + ta_after_time + """\');""")
-            execute(query[2], 'post', conn)
-
-            # New notification ID
-            UserNotificationIDresponse = execute("CALL get_notification_id;",  'get', conn)
-            UserNotificationID = UserNotificationIDresponse['result'][0]['new_id']
-
-            # User notfication
-            query.append("""Insert into notifications
-                                (notification_id
-                                    , user_ta_id
-                                    , gr_at_id
-                                    , before_is_enable
-                                    , before_is_set
-                                    , before_message
-                                    , before_time
-                                    , during_is_enable
-                                    , during_is_set
-                                    , during_message
-                                    , during_time
-                                    , after_is_enable
-                                    , after_is_set
-                                    , after_message
-                                    , after_time) 
-                                VALUES
-                                (     \'""" + UserNotificationID + """\'
-                                    , \'""" + user_id + """\'
-                                    , \'""" + new_gr_id + """\'
-                                    , \'""" + str(user_before_is_enable).title() + """\'
-                                    , \'""" + str(user_before_is_set).title() + """\'
-                                    , \'""" + user_before_message + """\'
-                                    , \'""" + user_before_time + """\'
-                                    , \'""" + str(user_during_is_enable).title() + """\'
-                                    , \'""" + str(user_during_is_set).title() + """\'
-                                    , \'""" + user_during_message + """\'
-                                    , \'""" + user_during_time + """\'
-                                    , \'""" + str(user_after_is_enable).title() + """\'
-                                    , \'""" + str(user_after_is_set).title() + """\'
-                                    , \'""" + user_after_message + """\'
-                                    , \'""" + user_after_time + """\');""")
-            items = execute(query[3], 'post', conn)
-
-
-            response['message'] = 'successful'
-            response['result'] = new_gr_id
-
-            return response, 200
-        except:
-            raise BadRequest('Request failed, please try again later.')
-        finally:
-            disconnect(conn)
 
 # Add new Goal/Routine of a user
 class AddNewGR2(Resource):
@@ -856,7 +682,7 @@ class AddNewGR2(Resource):
             new_gr_id_response = execute(query[0],  'get', conn)
             new_gr_id = new_gr_id_response['result'][0]['new_id']
 
-            gr_picture = helper_upload_img(photo, str(user_id+new_gr_id))
+            gr_picture = helper_upload_img(photo)
             print(gr_picture)
 
             if not photo:
@@ -1050,77 +876,83 @@ class AddNewGR2(Resource):
         finally:
             disconnect(conn)
 
-
 # Add new Goal/Routine of a user
-class UpdateGR(Resource):
+class AddNewGR(Resource):
     def post(self):    
         response = {}
         items = {}
 
         try:
             conn = connect()
-            data = request.get_json(force=True)
-
-            audio = data['audio']
-            datetime_completed = data['datetime_completed']
-            datetime_started = data['datetime_started']
-            end_day_and_time = data['end_day_and_time']
-            expected_completion_time = data['expected_completion_time']
-            id = data['id']
-            print(id)
-            is_available = data['is_available']
-            is_complete = data['is_complete']
-            is_displayed_today = data['is_displayed_today']
-            is_in_progress = data['is_in_progress']
-            is_persistent = data['is_persistent']
-            is_sublist_available = data['is_sublist_available']
-            is_timed = data['is_timed']
-            print(is_timed)
-            photo = data['photo']
-            print(photo)
-            repeat = data['repeat']
-            print(repeat)
-            repeat_ends = data['repeat_ends']
-            repeat_ends_on = data['repeat_ends_on']
-            repeat_every = data['repeat_every']
-            repeat_frequency = data['repeat_frequency']
-            repeat_occurences = data['repeat_occurences']
-            repeat_week_days = data['repeat_week_days']
+            
+            audio = request.form.get('audio')
+            datetime_completed = request.form.get('datetime_completed')
+            datetime_started = request.form.get('datetime_started')
+            end_day_and_time = request.form.get('end_day_and_time')
+            expected_completion_time = request.form.get('expected_completion_time')
+            user_id = request.form.get('user_id')
+            ta_id = request.form.get('ta_people_id')
+            is_available = request.form.get('is_available')
+            is_complete = request.form.get('is_complete')
+            is_displayed_today = request.form.get('is_displayed_today')
+            is_in_progress = request.form.get('is_in_progress')
+            is_persistent = request.form.get('is_persistent')
+            is_sublist_available = request.form.get('is_sublist_available')
+            is_timed = request.form.get('is_timed')
+            photo = request.files.get('photo')
+            photo_url = request.form.get('photo_url')
+            repeat = request.form.get('repeat')
+            repeat_ends = request.form.get('repeat_ends')
+            repeat_ends_on = request.form.get('repeat_ends_on')
+            repeat_every = request.form.get('repeat_every')
+            repeat_frequency = request.form.get('repeat_frequency')
+            repeat_occurences = request.form.get('repeat_occurences')
+            repeat_week_days = request.form.get('repeat_week_days')
             print(repeat_week_days)
-            start_day_and_time = data['start_day_and_time']
-            ta_before_is_enable = data['ta_notifications']['before']['is_enabled']
-            ta_before_is_set = data['ta_notifications']['before']['is_set']
-            ta_before_message = data['ta_notifications']['before']['message']
-            ta_before_time = data['ta_notifications']['before']['time']
-            ta_during_is_enable = data['ta_notifications']['during']['is_enabled']
-            ta_during_is_set = data['ta_notifications']['during']['is_set']
-            ta_during_message = data['ta_notifications']['during']['message']
-            ta_during_time = data['ta_notifications']['during']['time']
-            ta_after_is_enable = data['ta_notifications']['after']['is_enabled']
-            ta_after_is_set = data['ta_notifications']['after']['is_set']
-            ta_after_message = data['ta_notifications']['after']['message']
-            ta_after_time = data['ta_notifications']['after']['time']
-            gr_title = data['title']
+            start_day_and_time = request.form.get('start_day_and_time')
+            print(start_day_and_time)
+            ta_notifications = request.form.get('ta_notifications')
+            print(ta_notifications)
+            ta_notifications = json.loads(ta_notifications)
+            print(ta_notifications)
+            print(type(ta_notifications))
+            print(ta_notifications['before']['is_enabled'])
+            ta_before_is_enable = ta_notifications['before']['is_enabled']
+            print(ta_before_is_enable)
+            ta_before_is_set = ta_notifications['before']['is_set']
+            ta_before_message = ta_notifications['before']['message']
+            ta_before_time = ta_notifications['before']['time']
+            ta_during_is_enable = ta_notifications['during']['is_enabled']
+            ta_during_is_set = ta_notifications['during']['is_set']
+            ta_during_message = ta_notifications['during']['message']
+            print(ta_during_message)
+            ta_during_time = ta_notifications['during']['time']
+            ta_after_is_enable = ta_notifications['after']['is_enabled']
+            ta_after_is_set = ta_notifications['after']['is_set']
+            ta_after_message = ta_notifications['after']['message']
+            ta_after_time = ta_notifications['after']['time']
+            gr_title = request.form.get('title')
             print(gr_title)
-            user_before_is_enable = data['user_notifications']['before']['is_enabled']
-            user_before_is_set = data['user_notifications']['before']['is_set']
-            user_before_message = data['user_notifications']['before']['message']
-            user_before_time = data['user_notifications']['before']['time']
-            user_during_is_enable = data['user_notifications']['during']['is_enabled']
-            user_during_is_set = data['user_notifications']['during']['is_set']
-            user_during_message = data['user_notifications']['during']['message']
-            user_during_time = data['user_notifications']['during']['time']
-            user_after_is_enable = data['user_notifications']['after']['is_enabled']
-            user_after_is_set = data['user_notifications']['after']['is_set']
-            user_after_message = data['user_notifications']['after']['message']
-            user_after_time = data['user_notifications']['after']['time']
-            user_id = data['user_id']
-            print(user_id)
-            ta_people_id = data['ta_people_id']
-            print(user_id)
-            # user_id_response = execute("""SELECT user_id from goals_routines where gr_unique_id = \'""" +id+ """\'""", 'get', conn)
-            # user_id = user_id_response['result'][0]['user_id']
-
+            user_notifications = request.form.get('user_notifications')
+            user_notifications = json.loads(user_notifications)
+            user_before_is_enable = user_notifications['before']['is_enabled']
+            user_before_is_set = user_notifications['before']['is_set']
+            user_before_message = user_notifications['before']['message']
+            user_before_time = user_notifications['before']['time']
+            user_during_is_enable = user_notifications['during']['is_enabled']
+            user_during_is_set = user_notifications['during']['is_set']
+            user_during_message = user_notifications['during']['message']
+            user_during_time = user_notifications['during']['time']
+            user_after_is_enable = user_notifications['after']['is_enabled']
+            user_after_is_set = user_notifications['after']['is_set']
+            user_after_message = user_notifications['after']['message']
+            user_after_time = user_notifications['after']['time']
+            print(repeat_week_days)
+            icon_type = request.form.get('type')
+            description = 'Other'
+            
+            repeat_week_days = json.loads(repeat_week_days)
+         
             dict_week_days = {"Sunday":"False", "Monday":"False", "Tuesday":"False", "Wednesday":"False", "Thursday":"False", "Friday":"False", "Saturday":"False"}
             for key in repeat_week_days:
                 if repeat_week_days[key] == "Sunday":
@@ -1136,71 +968,227 @@ class UpdateGR(Resource):
                 if repeat_week_days[key] == "Friday":
                     dict_week_days["Friday"] = "True"
                 if repeat_week_days[key] == "Saturday":
-                    dict_week_days["Saturday"] = "True"   
-                
-            # Update G/R to database
-            query = """UPDATE goals_routines
-                            SET gr_title = \'""" + gr_title + """\'
-                                , is_available = \'""" + str(is_available).title() + """\'
-                                ,is_complete = \'""" + str(is_complete).title() + """\'
-                                ,is_sublist_available = \'""" + str(is_sublist_available).title() + """\'
-                                ,is_in_progress = \'""" + str(is_in_progress).title() + """\'
-                                ,is_displayed_today = \'""" + str(is_displayed_today).title() + """\'
-                                ,is_persistent = \'""" + str(is_persistent).title() + """\'
-                                ,is_timed = \'""" + str(is_timed).title() + """\'
-                                ,start_day_and_time = \'""" + start_day_and_time + """\'
-                                ,end_day_and_time = \'""" + end_day_and_time + """\'
-                                ,datetime_started = \'""" + datetime_started + """\'
-                                ,datetime_completed = \'""" + datetime_completed + """\'
-                                ,`repeat` = \'""" + str(repeat) + """\'
-                                ,repeat_type = \'""" + repeat_ends + """\'
-                                ,repeat_ends_on = \'""" + repeat_ends_on + """\'
-                                ,repeat_every = \'""" + str(repeat_every) + """\'
-                                ,repeat_frequency = \'""" + repeat_frequency + """\'
-                                ,repeat_occurences = \'""" + str(repeat_occurences) + """\'
-                                ,repeat_week_days = \'""" + json.dumps(dict_week_days) + """\'
-                                ,expected_completion_time = \'""" + expected_completion_time + """\'
-                                ,photo = \'""" + photo + """\'
-                        WHERE gr_unique_id = \'""" +id+ """\';"""
-            items = execute(query, 'post', conn)
+                    dict_week_days["saturday"] = "True"
 
+            print(dict_week_days)
+            # New Goal/Routine ID
+            query = ["CALL get_gr_id;"]
+            new_gr_id_response = execute(query[0],  'get', conn)
+            new_gr_id = new_gr_id_response['result'][0]['new_id']
+
+            if not photo:
+            # Add G/R to database
+                query.append("""INSERT INTO goals_routines(gr_unique_id
+                                , gr_title
+                                , user_id
+                                , is_available
+                                , is_complete
+                                , is_in_progress
+                                , is_displayed_today
+                                , is_persistent
+                                , is_sublist_available
+                                , is_timed
+                                , photo
+                                , `repeat`
+                                , repeat_type
+                                , repeat_ends_on
+                                , repeat_every
+                                , repeat_frequency
+                                , repeat_occurences
+                                , start_day_and_time
+                                , repeat_week_days
+                                , datetime_completed
+                                , datetime_started
+                                , end_day_and_time
+                                , expected_completion_time)
+                            VALUES 
+                            ( \'""" + new_gr_id + """\'
+                            , \'""" + gr_title + """\'
+                            , \'""" + user_id + """\'
+                            , \'""" + str(is_available).title() + """\'
+                            , \'""" + str(is_complete).title() + """\'
+                            , \'""" + str(is_in_progress).title() + """\'
+                            , \'""" + str(is_displayed_today).title() + """\'
+                            , \'""" + str(is_persistent).title() + """\'
+                            , \'""" + str(is_sublist_available).title() + """\'
+                            , \'""" + str(is_timed).title() + """\'
+                            , \'""" + photo_url + """\'
+                            , \'""" + str(repeat) + """\'
+                            , \'""" + repeat_ends + """\'
+                            , \'""" + repeat_ends_on + """\'
+                            , \'""" + str(repeat_every) + """\'
+                            , \'""" + repeat_frequency + """\'
+                            , \'""" + str(repeat_occurences) + """\'
+                            , \'""" + start_day_and_time + """\'
+                            , \'""" + json.dumps(dict_week_days) + """\'
+                            , \'""" + datetime_completed + """\'
+                            , \'""" + datetime_started + """\'
+                            , \'""" + end_day_and_time + """\'
+                            , \'""" + expected_completion_time + """\');""")
+                execute(query[1], 'post', conn)
+            else:
+
+                gr_picture = helper_upload_img(photo)
+
+                query.append("""INSERT INTO goals_routines(gr_unique_id
+                                , gr_title
+                                , user_id
+                                , is_available
+                                , is_complete
+                                , is_in_progress
+                                , is_displayed_today
+                                , is_persistent
+                                , is_sublist_available
+                                , is_timed
+                                , photo
+                                , `repeat`
+                                , repeat_type
+                                , repeat_ends_on
+                                , repeat_every
+                                , repeat_frequency
+                                , repeat_occurences
+                                , start_day_and_time
+                                , repeat_week_days
+                                , datetime_completed
+                                , datetime_started
+                                , end_day_and_time
+                                , expected_completion_time)
+                            VALUES 
+                            ( \'""" + new_gr_id + """\'
+                            , \'""" + gr_title + """\'
+                            , \'""" + user_id + """\'
+                            , \'""" + str(is_available).title() + """\'
+                            , \'""" + str(is_complete).title() + """\'
+                            , \'""" + str(is_in_progress).title() + """\'
+                            , \'""" + str(is_displayed_today).title() + """\'
+                            , \'""" + str(is_persistent).title() + """\'
+                            , \'""" + str(is_sublist_available).title() + """\'
+                            , \'""" + str(is_timed).title() + """\'
+                            , \'""" + gr_picture + """\'
+                            , \'""" + str(repeat) + """\'
+                            , \'""" + repeat_ends + """\'
+                            , \'""" + repeat_ends_on + """\'
+                            , \'""" + str(repeat_every) + """\'
+                            , \'""" + repeat_frequency + """\'
+                            , \'""" + str(repeat_occurences) + """\'
+                            , \'""" + start_day_and_time + """\'
+                            , \'""" + json.dumps(dict_week_days) + """\'
+                            , \'""" + datetime_completed + """\'
+                            , \'""" + datetime_started + """\'
+                            , \'""" + end_day_and_time + """\'
+                            , \'""" + expected_completion_time + """\');""")
+
+                if icon_type == 'icon':
+                    NewIDresponse = execute("CALL get_icon_id;",  'get', conn)
+                    NewID = NewIDresponse['result'][0]['new_id']
+
+                    execute("""INSERT INTO icons(
+                                uid
+                                , Description
+                                , url
+                                )VALUES(
+                                    \'""" + NewID + """\'
+                                    , \'""" + description + """\'
+                                    , \'""" + gr_picture + """\');""", 'post', conn)
+                
+                else:
+                    NewIDresponse = execute("CALL get_icon_id;",  'get', conn)
+                    NewID = NewIDresponse['result'][0]['new_id']
+
+                    execute("""INSERT INTO icons(
+                                uid
+                                , url
+                                , Description
+                                , user_id
+                                )VALUES(
+                                    \'""" + NewID + """\'
+                                    , \'""" + gr_picture + """\'
+                                    , \'""" + 'Image Uploaded' + """\'
+                                    , \'""" + user_id + """\');""", 'post', conn)
+                execute(query[1], 'post', conn)
+            
+            # New Notification ID
+            new_notification_id_response = execute("CALL get_notification_id;",  'get', conn)
+            new_notfication_id = new_notification_id_response['result'][0]['new_id']
 
             # TA notfication
-            query1 = """UPDATE notifications
-                             SET   before_is_enable = \'""" + str(user_before_is_enable).title() + """\'
-                                    , before_is_set  = \'""" + str(user_before_is_set).title() + """\'
-                                    , before_message = \'""" + user_before_message + """\'
-                                    , before_time = \'""" + user_before_time + """\'
-                                    , during_is_enable = \'""" + str(user_during_is_enable).title() + """\'
-                                    , during_is_set = \'""" + str(user_during_is_set).title() + """\'
-                                    , during_message = \'""" + user_during_message + """\'
-                                    , during_time = \'""" + user_during_time + """\'
-                                    , after_is_enable = \'""" + str(user_after_is_enable).title() + """\'
-                                    , after_is_set = \'""" + str(user_after_is_set).title() + """\'
-                                    , after_message = \'""" + user_after_message + """\'
-                                    , after_time  = \'""" + user_after_time + """\'
-                                WHERE gr_at_id = \'""" +id+ """\' and user_ta_id = \'""" +user_id+ """\';"""
-            execute(query1, 'post', conn)
-            print(query1)
+            query.append("""Insert into notifications
+                                (notification_id
+                                    , user_ta_id
+                                    , gr_at_id
+                                    , before_is_enable
+                                    , before_is_set
+                                    , before_message
+                                    , before_time
+                                    , during_is_enable
+                                    , during_is_set
+                                    , during_message
+                                    , during_time
+                                    , after_is_enable
+                                    , after_is_set
+                                    , after_message
+                                    , after_time) 
+                                VALUES
+                                (     \'""" + new_notfication_id + """\'
+                                    , \'""" + ta_id + """\'
+                                    , \'""" + new_gr_id + """\'
+                                    , \'""" + str(ta_before_is_enable).title() + """\'
+                                    , \'""" + str(ta_before_is_set).title() + """\'
+                                    , \'""" + ta_before_message + """\'
+                                    , \'""" + ta_before_time + """\'
+                                    , \'""" + str(ta_during_is_enable).title() + """\'
+                                    , \'""" + str(ta_during_is_set).title() + """\'
+                                    , \'""" + ta_during_message + """\'
+                                    , \'""" + ta_during_time + """\'
+                                    , \'""" + str(ta_after_is_enable).title() + """\'
+                                    , \'""" + str(ta_after_is_set).title() + """\'
+                                    , \'""" + ta_after_message + """\'
+                                    , \'""" + ta_after_time + """\');""")
+            execute(query[2], 'post', conn)
+
+            # New notification ID
+            UserNotificationIDresponse = execute("CALL get_notification_id;",  'get', conn)
+            UserNotificationID = UserNotificationIDresponse['result'][0]['new_id']
 
             # User notfication
-            query2 = """UPDATE notifications
-                             SET   before_is_enable = \'""" + str(ta_before_is_enable).title() + """\'
-                                    , before_is_set  = \'""" + str(ta_before_is_set).title() + """\'
-                                    , before_message = \'""" + ta_before_message + """\'
-                                    , before_time = \'""" + ta_before_time + """\'
-                                    , during_is_enable = \'""" + str(ta_during_is_enable).title() + """\'
-                                    , during_is_set = \'""" + str(ta_during_is_set).title() + """\'
-                                    , during_message = \'""" + ta_during_message + """\'
-                                    , during_time = \'""" + ta_during_time + """\'
-                                    , after_is_enable = \'""" + str(ta_after_is_enable).title() + """\'
-                                    , after_is_set = \'""" + str(ta_after_is_set).title() + """\'
-                                    , after_message = \'""" + ta_after_message + """\'
-                                    , after_time  = \'""" + ta_after_time + """\'
-                                WHERE gr_at_id = \'""" +id+ """\' and user_ta_id  = \'""" +ta_people_id+ """\';"""
-            print(query2)
-            execute(query2, 'post', conn)
-            response['message'] = 'Update to Goal and Routine was Successful'
+            query.append("""Insert into notifications
+                                (notification_id
+                                    , user_ta_id
+                                    , gr_at_id
+                                    , before_is_enable
+                                    , before_is_set
+                                    , before_message
+                                    , before_time
+                                    , during_is_enable
+                                    , during_is_set
+                                    , during_message
+                                    , during_time
+                                    , after_is_enable
+                                    , after_is_set
+                                    , after_message
+                                    , after_time) 
+                                VALUES
+                                (     \'""" + UserNotificationID + """\'
+                                    , \'""" + user_id + """\'
+                                    , \'""" + new_gr_id + """\'
+                                    , \'""" + str(user_before_is_enable).title() + """\'
+                                    , \'""" + str(user_before_is_set).title() + """\'
+                                    , \'""" + user_before_message + """\'
+                                    , \'""" + user_before_time + """\'
+                                    , \'""" + str(user_during_is_enable).title() + """\'
+                                    , \'""" + str(user_during_is_set).title() + """\'
+                                    , \'""" + user_during_message + """\'
+                                    , \'""" + user_during_time + """\'
+                                    , \'""" + str(user_after_is_enable).title() + """\'
+                                    , \'""" + str(user_after_is_set).title() + """\'
+                                    , \'""" + user_after_message + """\'
+                                    , \'""" + user_after_time + """\');""")
+            items = execute(query[3], 'post', conn)
+
+
+            response['message'] = 'successful'
+            response['result'] = new_gr_id
+
             return response, 200
         except:
             raise BadRequest('Request failed, please try again later.')
@@ -1289,6 +1277,7 @@ class UpdateGR2(Resource):
                     dict_week_days["Saturday"] = "True"   
 
             if not photo:
+
                 query = """UPDATE goals_routines
                                 SET gr_title = \'""" + gr_title + """\'
                                     , is_available = \'""" + str(is_available).title() + """\'
@@ -1316,8 +1305,7 @@ class UpdateGR2(Resource):
             else:
                
                  # Update G/R to database
-                gr_picture = helper_upload_img(photo, str(user_id+'-'+id))
-                print(gr_picture)
+                gr_picture = helper_upload_img(photo)
                 # Update G/R to database
                 query = """UPDATE goals_routines
                                 SET gr_title = \'""" + gr_title + """\'
@@ -1377,7 +1365,214 @@ class UpdateGR2(Resource):
                                     , after_message = \'""" + ta_after_message + """\'
                                     , after_time  = \'""" + ta_after_time + """\'
                                 WHERE gr_at_id = \'""" +id+ """\' and user_ta_id  = \'""" +ta_id+ """\';"""
-            print(query2)
+            execute(query2, 'post', conn)
+            response['message'] = 'Update to Goal and Routine was Successful'
+            return response, 200
+        except:
+            raise BadRequest('Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
+# Add new Goal/Routine of a user
+class UpdateGR(Resource):
+    def post(self): 
+        response = {}
+        items = {}
+        try:
+            conn = connect()
+
+            audio = request.form.get('audio')
+            id = request.form.get('id')
+            datetime_completed = request.form.get('datetime_completed')
+            datetime_started = request.form.get('datetime_started')
+            end_day_and_time = request.form.get('end_day_and_time')
+            expected_completion_time = request.form.get('expected_completion_time')
+            user_id = request.form.get('user_id')
+            ta_id = request.form.get('ta_people_id')
+            is_available = request.form.get('is_available')
+            is_complete = request.form.get('is_complete')
+            is_displayed_today = request.form.get('is_displayed_today')
+            is_in_progress = request.form.get('is_in_progress')
+            is_persistent = request.form.get('is_persistent')
+            is_sublist_available = request.form.get('is_sublist_available')
+            is_timed = request.form.get('is_timed')
+            photo = request.files.get('photo')
+            photo_url = request.form.get('photo_url')
+            repeat = request.form.get('repeat')
+            repeat_ends = request.form.get('repeat_ends')
+            repeat_ends_on = request.form.get('repeat_ends_on')
+            repeat_every = request.form.get('repeat_every')
+            repeat_frequency = request.form.get('repeat_frequency')
+            repeat_occurences = request.form.get('repeat_occurences')
+            repeat_week_days = request.form.get('repeat_week_days')
+            start_day_and_time = request.form.get('start_day_and_time')
+            ta_notifications = request.form.get('ta_notifications')
+            ta_notifications = json.loads(ta_notifications)
+            ta_before_is_enabled = ta_notifications['before']['is_enabled']
+            ta_before_is_set = ta_notifications['before']['is_set']
+            ta_before_message = ta_notifications['before']['message']
+            ta_before_time = ta_notifications['before']['time']
+            ta_during_is_enabled = ta_notifications['during']['is_enabled']
+            ta_during_is_set = ta_notifications['during']['is_set']
+            ta_during_message = ta_notifications['during']['message']
+            ta_during_time = ta_notifications['during']['time']
+            ta_after_is_enabled = ta_notifications['after']['is_enabled']
+            ta_after_is_set = ta_notifications['after']['is_set']
+            ta_after_message = ta_notifications['after']['message']
+            ta_after_time = ta_notifications['after']['time']
+            gr_title = request.form.get('title')
+            user_notifications = request.form.get('user_notifications')
+            user_notifications = json.loads(user_notifications)
+            user_before_is_enabled = user_notifications['before']['is_enabled']
+            user_before_is_set = user_notifications['before']['is_set']
+            user_before_message = user_notifications['before']['message']
+            user_before_time = user_notifications['before']['time']
+            user_during_is_enabled = user_notifications['during']['is_enabled']
+            user_during_is_set = user_notifications['during']['is_set']
+            user_during_message = user_notifications['during']['message']
+            user_during_time = user_notifications['during']['time']
+            user_after_is_enabled = user_notifications['after']['is_enabled']
+            user_after_is_set = user_notifications['after']['is_set']
+            user_after_message = user_notifications['after']['message']
+            user_after_time = user_notifications['after']['time']
+            icon_type = request.form.get('type')
+            description = 'Other'
+
+            repeat_week_days = json.loads(repeat_week_days)
+            dict_week_days = {"Sunday":"False", "Monday":"False", "Tuesday":"False", "Wednesday":"False", "Thursday":"False", "Friday":"False", "Saturday":"False"}
+            for key in repeat_week_days:
+                if repeat_week_days[key] == "Sunday":
+                    dict_week_days["Sunday"] = "True"
+                if repeat_week_days[key] == "Monday":
+                    dict_week_days["Monday"] = "True"
+                if repeat_week_days[key] == "Tuesday":
+                    dict_week_days["Tuesday"] = "True"
+                if repeat_week_days[key] == "Wednesday":
+                    dict_week_days["Wednesday"] = "True"
+                if repeat_week_days[key] == "Thursday":
+                    dict_week_days["Thursday"] = "True"
+                if repeat_week_days[key] == "Friday":
+                    dict_week_days["Friday"] = "True"
+                if repeat_week_days[key] == "Saturday":
+                    dict_week_days["Saturday"] = "True"   
+
+            if not photo:
+
+                query = """UPDATE goals_routines
+                                SET gr_title = \'""" + gr_title + """\'
+                                    , is_available = \'""" + str(is_available).title() + """\'
+                                    ,is_complete = \'""" + str(is_complete).title() + """\'
+                                    ,is_sublist_available = \'""" + str(is_sublist_available).title() + """\'
+                                    ,is_in_progress = \'""" + str(is_in_progress).title() + """\'
+                                    ,is_displayed_today = \'""" + str(is_displayed_today).title() + """\'
+                                    ,is_persistent = \'""" + str(is_persistent).title() + """\'
+                                    ,is_timed = \'""" + str(is_timed).title() + """\'
+                                    ,start_day_and_time = \'""" + start_day_and_time + """\'
+                                    ,end_day_and_time = \'""" + end_day_and_time + """\'
+                                    ,datetime_started = \'""" + datetime_started + """\'
+                                    ,datetime_completed = \'""" + datetime_completed + """\'
+                                    ,`repeat` = \'""" + str(repeat).title() + """\'
+                                    ,repeat_type = \'""" + repeat_ends + """\'
+                                    ,repeat_ends_on = \'""" + repeat_ends_on + """\'
+                                    ,repeat_every = \'""" + str(repeat_every) + """\'
+                                    ,repeat_week_days = \'""" + json.dumps(dict_week_days) + """\'
+                                    ,repeat_frequency = \'""" + repeat_frequency + """\'
+                                    ,repeat_occurences = \'""" + str(repeat_occurences) + """\'
+                                    ,expected_completion_time = \'""" + expected_completion_time + """\'
+                                    ,photo = \'""" + photo_url + """\'
+                            WHERE gr_unique_id = \'""" +id+ """\';"""
+               
+            else:
+                
+                gr_picture = helper_upload_img(photo)
+                # Update G/R to database
+                query = """UPDATE goals_routines
+                                SET gr_title = \'""" + gr_title + """\'
+                                    , is_available = \'""" + str(is_available).title() + """\'
+                                    ,is_complete = \'""" + str(is_complete).title() + """\'
+                                    ,is_sublist_available = \'""" + str(is_sublist_available).title() + """\'
+                                    ,is_in_progress = \'""" + str(is_in_progress).title() + """\'
+                                    ,is_displayed_today = \'""" + str(is_displayed_today).title() + """\'
+                                    ,is_persistent = \'""" + str(is_persistent).title() + """\'
+                                    ,is_timed = \'""" + str(is_timed).title() + """\'
+                                    ,start_day_and_time = \'""" + start_day_and_time + """\'
+                                    ,end_day_and_time = \'""" + end_day_and_time + """\'
+                                    ,datetime_started = \'""" + datetime_started + """\'
+                                    ,datetime_completed = \'""" + datetime_completed + """\'
+                                    ,`repeat` = \'""" + str(repeat).title() + """\'
+                                    ,repeat_type = \'""" + repeat_ends + """\'
+                                    ,repeat_ends_on = \'""" + repeat_ends_on + """\'
+                                    ,repeat_week_days = \'""" + json.dumps(dict_week_days) + """\'
+                                    ,repeat_every = \'""" + str(repeat_every) + """\'
+                                    ,repeat_frequency = \'""" + repeat_frequency + """\'
+                                    ,repeat_occurences = \'""" + str(repeat_occurences) + """\'
+                                    ,expected_completion_time = \'""" + expected_completion_time + """\'
+                                    ,photo = \'""" + gr_picture + """\'
+                            WHERE gr_unique_id = \'""" +id+ """\';"""
+
+                if icon_type == 'icon':
+                    NewIDresponse = execute("CALL get_icon_id;",  'get', conn)
+                    NewID = NewIDresponse['result'][0]['new_id']
+
+                    execute("""INSERT INTO icons(
+                                uid
+                                , Description
+                                , url
+                                )VALUES(
+                                    \'""" + NewID + """\'
+                                    , \'""" + description + """\'
+                                    , \'""" + gr_picture + """\');""", 'post', conn)
+                
+                else:
+                     
+                    NewIDresponse = execute("CALL get_icon_id;",  'get', conn)
+                    NewID = NewIDresponse['result'][0]['new_id']
+
+                    execute("""INSERT INTO icons(
+                                uid
+                                , url
+                                , Description
+                                , user_id
+                                )VALUES(
+                                    \'""" + NewID + """\'
+                                    , \'""" + gr_picture + """\'
+                                    , \'""" + 'Image Uploaded' + """\'
+                                    , \'""" + user_id + """\');""", 'post', conn)
+            
+            items = execute(query, 'post', conn)
+                
+            # USER notfication
+            query1 = """UPDATE notifications
+                             SET   before_is_enable = \'""" + str(user_before_is_enabled).title() + """\'
+                                    , before_is_set  = \'""" + str(user_before_is_set).title() + """\'
+                                    , before_message = \'""" + user_before_message + """\'
+                                    , before_time = \'""" + user_before_time + """\'
+                                    , during_is_enable = \'""" + str(user_during_is_enabled).title() + """\'
+                                    , during_is_set = \'""" + str(user_during_is_set).title() + """\'
+                                    , during_message = \'""" + user_during_message + """\'
+                                    , during_time = \'""" + user_during_time + """\'
+                                    , after_is_enable = \'""" + str(user_after_is_enabled).title() + """\'
+                                    , after_is_set = \'""" + str(user_after_is_set).title() + """\'
+                                    , after_message = \'""" + user_after_message + """\'
+                                    , after_time  = \'""" + user_after_time + """\'
+                                WHERE gr_at_id = \'""" +id+ """\' and user_ta_id = \'""" +user_id+ """\';"""
+            execute(query1, 'post', conn)
+            
+            # TA notfication
+            query2 = """UPDATE notifications
+                             SET   before_is_enable = \'""" + str(ta_before_is_enabled).title() + """\'
+                                    , before_is_set  = \'""" + str(ta_before_is_set).title() + """\'
+                                    , before_message = \'""" + ta_before_message + """\'
+                                    , before_time = \'""" + ta_before_time + """\'
+                                    , during_is_enable = \'""" + str(ta_during_is_enabled).title() + """\'
+                                    , during_is_set = \'""" + str(ta_during_is_set).title() + """\'
+                                    , during_message = \'""" + ta_during_message + """\'
+                                    , during_time = \'""" + ta_during_time + """\'
+                                    , after_is_enable = \'""" + str(ta_after_is_enabled).title() + """\'
+                                    , after_is_set = \'""" + str(ta_after_is_set).title() + """\'
+                                    , after_message = \'""" + ta_after_message + """\'
+                                    , after_time  = \'""" + ta_after_time + """\'
+                                WHERE gr_at_id = \'""" +id+ """\' and user_ta_id  = \'""" +ta_id+ """\';"""
             execute(query2, 'post', conn)
             response['message'] = 'Update to Goal and Routine was Successful'
             return response, 200
@@ -1394,73 +1589,131 @@ class AddNewAT(Resource):
 
         try:
             conn = connect()
-            data = request.get_json(force=True)
 
-            audio = data['audio']
-            datetime_completed = data['datetime_completed']
-            datetime_started = data['datetime_started']
-            expected_completion_time = data['expected_completion_time']
-            gr_id = data['gr_id']
-            is_available = data['is_available']
-            is_complete = data['is_complete']
-            is_in_progress = data['is_in_progress']
-            is_must_do = data['is_must_do']
-            is_sublist_available = data['is_sublist_available']
-            is_timed = data['is_timed']
-            photo = data['photo']
-            at_title = data['title']
-            available_end_time = data['available_end_time']
-            available_start_time = data['available_start_time']
+            audio = request.form.get('audio')
+            datetime_completed = request.form.get('datetime_completed')
+            datetime_started = request.form.get('datetime_started')
+            expected_completion_time = request.form.get('expected_completion_time')
+            gr_id = request.form.get('gr_id')
+            is_timed = request.form.get('is_timed')
+            is_available = request.form.get('is_available')
+            is_complete = request.form.get('is_complete')
+            is_in_progress = request.form.get('is_in_progress')
+            is_must_do = request.form.get('is_must_do')
+            is_sublist_available = request.form.get('is_sublist_available')
+            photo = request.files.get('photo')
+            photo_url = request.form.get('photo_url')
+            at_title = request.form.get('title')
+            available_end_time = request.form.get('available_end_time')
+            available_start_time = request.form.get('available_start_time')
+            icon_type = request.form.get('type')
 
             query = ["CALL get_at_id;"]
             NewATIDresponse = execute(query[0],  'get', conn)
             NewATID = NewATIDresponse['result'][0]['new_id']
+            
+            if not photo:
+                
+                query.append("""INSERT INTO actions_tasks(at_unique_id
+                                , at_title
+                                , goal_routine_id
+                                , at_sequence
+                                , is_available
+                                , is_complete
+                                , is_in_progress
+                                , is_sublist_available
+                                , is_must_do
+                                , photo
+                                , is_timed
+                                , datetime_completed
+                                , datetime_started
+                                , expected_completion_time
+                                , available_start_time
+                                , available_end_time)
+                            VALUES 
+                            ( \'""" + NewATID + """\'
+                            , \'""" + at_title + """\'
+                            , \'""" + gr_id + """\'
+                            , \'""" + '1' + """\'
+                            , \'""" + str(is_available).title() + """\'
+                            , \'""" + str(is_complete).title() + """\'
+                            , \'""" + str(is_in_progress).title() + """\'
+                            , \'""" + str(is_sublist_available).title() + """\'
+                            , \'""" + str(is_must_do).title() + """\'
+                            , \'""" + photo_url + """\'
+                            , \'""" + str(is_timed).title() + """\'
+                            , \'""" + datetime_completed + """\'
+                            , \'""" + datetime_started + """\'
+                            , \'""" + expected_completion_time + """\'
+                            , \'""" + available_start_time + """\'
+                            , \'""" + available_end_time + """\' );""")
+            
+            else:
+                
+                at_picture = helper_upload_img(photo)
+                print(at_picture)
+                query.append("""INSERT INTO actions_tasks(at_unique_id
+                                , at_title
+                                , goal_routine_id
+                                , at_sequence
+                                , is_available
+                                , is_complete
+                                , is_in_progress
+                                , is_sublist_available
+                                , is_must_do
+                                , photo
+                                , is_timed
+                                , datetime_completed
+                                , datetime_started
+                                , expected_completion_time
+                                , available_start_time
+                                , available_end_time)
+                            VALUES 
+                            ( \'""" + NewATID + """\'
+                            , \'""" + at_title + """\'
+                            , \'""" + gr_id + """\'
+                            , \'""" + '1' + """\'
+                            , \'""" + str(is_available).title() + """\'
+                            , \'""" + str(is_complete).title() + """\'
+                            , \'""" + str(is_in_progress).title() + """\'
+                            , \'""" + str(is_sublist_available).title() + """\'
+                            , \'""" + str(is_must_do).title() + """\'
+                            , \'""" + at_picture + """\'
+                            , \'""" + str(is_timed).title() + """\'
+                            , \'""" + datetime_completed + """\'
+                            , \'""" + datetime_started + """\'
+                            , \'""" + expected_completion_time + """\'
+                            , \'""" + available_start_time + """\'
+                            , \'""" + available_end_time + """\' );""")
 
-            # query.append("""SELECT at_sequence
-            #                 FROM actions_tasks
-            #                 WHERE goal_routine_id = \'""" + gr_id + """\'
-            #                 ORDER BY at_sequence DESC
-            #                 LIMIT 1;""")
-            # ATSequenceResponse = execute(query[1], 'get', conn)
-            # at_sequence = ATSequenceResponse['result'][0]['at_sequence']
-            # if(at_sequence >= 1):
-            #     at_sequence += 1
-            # else:
-            #     at_sequence = 1
+                if icon_type == 'icon':
+                    NewIDresponse = execute("CALL get_icon_id;",  'get', conn)
+                    NewID = NewIDresponse['result'][0]['new_id']
 
-            query.append("""INSERT INTO actions_tasks(at_unique_id
-                            , at_title
-                            , goal_routine_id
-                            , at_sequence
-                            , is_available
-                            , is_complete
-                            , is_in_progress
-                            , is_sublist_available
-                            , is_must_do
-                            , photo
-                            , is_timed
-                            , datetime_completed
-                            , datetime_started
-                            , expected_completion_time
-                            , available_start_time
-                            , available_end_time)
-                        VALUES 
-                        ( \'""" + NewATID + """\'
-                        , \'""" + at_title + """\'
-                        , \'""" + gr_id + """\'
-                        , \'""" + '1' + """\'
-                        , \'""" + str(is_available).title() + """\'
-                        , \'""" + str(is_complete).title() + """\'
-                        , \'""" + str(is_in_progress).title() + """\'
-                        , \'""" + str(is_sublist_available).title() + """\'
-                        , \'""" + str(is_must_do).title() + """\'
-                        , \'""" + photo + """\'
-                        , \'""" + str(is_timed).title() + """\'
-                        , \'""" + datetime_completed + """\'
-                        , \'""" + datetime_started + """\'
-                        , \'""" + expected_completion_time + """\'
-                        , \'""" + available_start_time + """\'
-                        , \'""" + available_end_time + """\' );""")
+                    execute("""INSERT INTO icons(
+                                uid
+                                , Description
+                                , url
+                                )VALUES(
+                                    \'""" + NewID + """\'
+                                    , \'""" + description + """\'
+                                    , \'""" + at_picture + """\');""", 'post', conn)
+                
+                else:
+                     
+                    NewIDresponse = execute("CALL get_icon_id;",  'get', conn)
+                    NewID = NewIDresponse['result'][0]['new_id']
+
+                    execute("""INSERT INTO icons(
+                                uid
+                                , url
+                                , Description
+                                , user_id
+                                )VALUES(
+                                    \'""" + NewID + """\'
+                                    , \'""" + gr_picture + """\'
+                                    , \'""" + 'Image Uploaded' + """\'
+                                    , \'""" + user_id + """\');""", 'post', conn)
 
             items = execute(query[1], 'post', conn)
 
@@ -1540,7 +1793,7 @@ class AddNewAT2(Resource):
             
             else:
                
-                at_picture = helper_upload_img(photo, str(gr_id+'-'+NewATID))
+                at_picture = helper_upload_img(photo)
                 print(at_picture)
                 query.append("""INSERT INTO actions_tasks(at_unique_id
                                 , at_title
@@ -1613,6 +1866,7 @@ class UpdateAT2(Resource):
             available_start_time = request.form.get('available_start_time')
         
             if not photo:
+
                 query = """UPDATE actions_tasks
                             SET  at_title = \'""" + at_title + """\'
                                 , at_sequence = \'""" + '1' + """\'
@@ -1633,7 +1887,7 @@ class UpdateAT2(Resource):
             else:
                 gr_id_response = execute("""SELECT goal_routine_id from actions_tasks where at_unique_id = \'""" +id+ """\'""", 'get', conn)
                 gr_id = gr_id_response['result'][0]['goal_routine_id']
-                at_picture = helper_upload_img(photo, str(gr_id+'-'+id))
+                at_picture = helper_upload_img(photo)
                 query = """UPDATE actions_tasks
                             SET  at_title = \'""" + at_title + """\'
                                 , at_sequence = \'""" + '1' + """\'
@@ -1669,85 +1923,95 @@ class UpdateAT(Resource):
 
         try:
             conn = connect()
-            data = request.get_json(force=True)
 
-            audio = data['audio']
-            datetime_completed = data['datetime_completed']
-            datetime_started = data['datetime_started']
-            available_end_time = data['available_end_time']
-            available_start_time = data['available_start_time']
-            expected_completion_time = data['expected_completion_time']
-            id = data['id']
-            is_available = data['is_available']
-            is_complete = data['is_complete']
-            is_in_progress = data['is_in_progress']
-            is_must_do = data['is_must_do']
-            is_sublist_available = data['is_sublist_available']
-            is_timed = data['is_timed']
-            photo = data['photo']
-            at_title = data['title']
+            audio = request.form.get('audio')
+            datetime_completed = request.form.get('datetime_completed')
+            datetime_started = request.form.get('datetime_started')
+            expected_completion_time = request.form.get('expected_completion_time')
+            id = request.form.get('id')
+            is_available = request.form.get('is_available')
+            is_complete = request.form.get('is_complete')
+            is_in_progress = request.form.get('is_in_progress')
+            is_timed = request.form.get('is_timed')
+            is_must_do = request.form.get('is_must_do')
+            is_sublist_available = request.form.get('is_sublist_available')
+            photo = request.files.get('photo')
+            photo_url = request.form.get('photo_url')
+            at_title = request.form.get('title')
+            available_end_time = request.form.get('available_end_time')
+            available_start_time = request.form.get('available_start_time')
+        
+            if not photo:
 
-            # ta_before_is_enable = data['ta_notifications']['before']['is_enable']
-            # ta_before_is_set = data['ta_notifications']['before']['is_set']
-            # ta_before_message = data['ta_notifications']['before']['message']
-            # ta_before_time = data['ta_notifications']['before']['time']
-            # ta_during_is_enable = data['ta_notifications']['during']['is_enable']
-            # ta_during_is_set = data['ta_notifications']['during']['is_set']
-            # ta_during_message = data['ta_notifications']['during']['message']
-            # ta_during_time = data['ta_notifications']['during']['time']
-            # ta_after_is_enable = data['ta_notifications']['after']['is_enable']
-            # ta_after_is_set = data['ta_notifications']['after']['is_set']
-            # ta_after_message = data['ta_notifications']['after']['message']
-            # ta_after_time = data['ta_notifications']['after']['time']
-            # user_before_is_enable = data['user_notifications']['before']['is_enable']
-            # user_before_is_set = data['user_notifications']['before']['is_set']
-            # user_before_message = data['user_notifications']['before']['message']
-            # user_before_time = data['user_notifications']['before']['time']
-            # user_during_is_enable = data['user_notifications']['during']['is_enable']
-            # user_during_is_set = data['user_notifications']['during']['is_set']
-            # user_during_message = data['user_notifications']['during']['message']
-            # user_during_time = data['user_notifications']['during']['time']
-            # user_after_is_enable = data['user_notifications']['after']['is_enable']
-            # user_after_is_set = data['user_notifications']['after']['is_set']
-            # user_after_message = data['user_notifications']['after']['message']
-            # user_after_time = data['user_notifications']['after']['time']
+                query = """UPDATE actions_tasks
+                            SET  at_title = \'""" + at_title + """\'
+                                , at_sequence = \'""" + '1' + """\'
+                                , is_available = \'""" + str(is_available).title() + """\'
+                                , is_complete = \'""" + str(is_complete).title() + """\'
+                                , is_in_progress = \'""" + str(is_in_progress).title() + """\'
+                                , is_sublist_available = \'""" + str(is_sublist_available).title() + """\'
+                                , is_must_do = \'""" + str(is_must_do).title() + """\'
+                                , photo = \'""" + photo_url + """\'
+                                , is_timed = \'""" + str(is_timed).title() + """\'
+                                , datetime_completed =  \'""" + datetime_completed + """\'
+                                , datetime_started = \'""" + datetime_started + """\'
+                                , expected_completion_time = \'""" + expected_completion_time + """\'
+                                , available_start_time = \'""" + available_start_time + """\'
+                                , available_end_time = \'""" + available_end_time + """\'
+                                WHERE at_unique_id = \'""" +id+ """\';"""
 
-            # query.append("""SELECT at_sequence
-            #                 FROM actions_tasks
-            #                 WHERE goal_routine_id = \'""" + gr_id + """\'
-            #                 ORDER BY at_sequence DESC
-            #                 LIMIT 1;""")
-            # ATSequenceResponse = execute(query[1], 'get', conn)
-            # at_sequence = ATSequenceResponse['result'][0]['at_sequence']
-            # if(at_sequence >= 1):
-            #     at_sequence += 1
-            # else:
-            #     at_sequence = 1
+            else:
+                gr_id_response = execute("""SELECT goal_routine_id from actions_tasks where at_unique_id = \'""" +id+ """\'""", 'get', conn)
+                gr_id = gr_id_response['result'][0]['goal_routine_id']
 
-            gr_id_response = execute("""SELECT goal_routine_id from actions_tasks where at_unique_id = \'""" +id+ """\'""", 'get', conn)
-            gr_id = gr_id_response['result'][0]['goal_routine_id']
-            print(gr_id)
-            query = """UPDATE actions_tasks
-                        SET  at_title = \'""" + at_title + """\'
-                            , goal_routine_id = \'""" + gr_id + """\'
-                            , at_sequence = \'""" + '1' + """\'
-                            , is_available = \'""" + str(is_available).title() + """\'
-                            , is_complete = \'""" + str(is_complete).title() + """\'
-                            , is_in_progress = \'""" + str(is_in_progress).title() + """\'
-                            , is_sublist_available = \'""" + str(is_sublist_available).title() + """\'
-                            , is_must_do = \'""" + str(is_must_do).title() + """\'
-                            , photo = \'""" + photo + """\'
-                            , is_timed = \'""" + str(is_timed).title() + """\'
-                            , datetime_completed =  \'""" + datetime_completed + """\'
-                            , datetime_started = \'""" + datetime_started + """\'
-                            , expected_completion_time = \'""" + expected_completion_time + """\'
-                            , available_start_time = \'""" + available_start_time + """\'
-                            , available_end_time = \'""" + available_end_time + """\'
-                            WHERE at_unique_id = \'""" +id+ """\';"""
-            print(query)
+                at_picture = helper_upload_img(photo)
+
+                query = """UPDATE actions_tasks
+                            SET  at_title = \'""" + at_title + """\'
+                                , at_sequence = \'""" + '1' + """\'
+                                , is_available = \'""" + str(is_available).title() + """\'
+                                , is_complete = \'""" + str(is_complete).title() + """\'
+                                , is_in_progress = \'""" + str(is_in_progress).title() + """\'
+                                , is_sublist_available = \'""" + str(is_sublist_available).title() + """\'
+                                , is_must_do = \'""" + str(is_must_do).title() + """\'
+                                , photo = \'""" + at_picture + """\'
+                                , is_timed = \'""" + str(is_timed).title() + """\'
+                                , datetime_completed =  \'""" + datetime_completed + """\'
+                                , datetime_started = \'""" + datetime_started + """\'
+                                , expected_completion_time = \'""" + expected_completion_time + """\'
+                                , available_start_time = \'""" + available_start_time + """\'
+                                , available_end_time = \'""" + available_end_time + """\'
+                                WHERE at_unique_id = \'""" +id+ """\';"""
+                    
+                if icon_type == 'icon':
+                    NewIDresponse = execute("CALL get_icon_id;",  'get', conn)
+                    NewID = NewIDresponse['result'][0]['new_id']
+
+                    execute("""INSERT INTO icons(
+                                uid
+                                , Description
+                                , url
+                                )VALUES(
+                                    \'""" + NewID + """\'
+                                    , \'""" + description + """\'
+                                    , \'""" + at_picture + """\');""", 'post', conn)
+                    
+                else:
+                    NewIDresponse = execute("CALL get_image_id;",  'get', conn)
+                    NewID = NewIDresponse['result'][0]['new_id']
+
+                    execute("""INSERT INTO image_upload(
+                                uid
+                                , url
+                                , user_id
+                                )VALUES(
+                                    \'""" + NewID + """\'
+                                    , \'""" + at_picture + """\'
+                                    , \'""" + user_id + """\');""", 'post', conn)
+
             items = execute(query, 'post', conn)
             response['message'] = 'successful'
-            response['result'] = items
+            response['result'] = "Update Successful"
 
             return response, 200
         except:
@@ -2349,25 +2613,21 @@ class CreateNewPeople(Resource):
         try:
             conn = connect()
             ts  = getNow()
-            data = request.get_json(force=True)
 
-            user_id = data['user_id']
-            email_id = data['email_id']
-            name = data['first_name']
-            last_name = data['last_name']
-            employer = data['employer']
-            relation_type = data['relationship']
-            phone_number = data['phone_number']
-            picture = data['picture']
-            ta_people_type = 'people'
+            user_id = request.form.get('user_id')
+            email_id = request.form.get('email_id')
+            name = request.form.get('name')
+            relation_type = request.form.get('relationship')
+            phone_number = request.form.get('phone_number')
+            picture = request.files.get('picture')
             important = 'False'
 
             email_list = []
             
-            if picture != '':
-                have_pic = 'TRUE'
-            else:
+            if not picture:
                 have_pic = 'FALSE'
+            else:
+                have_pic = 'TRUE'
 
             list = name.split()
             first_name = list[0]
@@ -2384,11 +2644,10 @@ class CreateNewPeople(Resource):
             peopleResponse = execute(query[1], 'get', conn)
             email_list = []
 
-            # userIDResponse = execute("SELECT user_unique_id from users where email_id = \'""" + email + """\';""", 'get', conn)
-            # user_id = userIDResponse['result'][0]['user_unique_id']
             for i in range(len(peopleResponse['result'])):
                 email_id_existing = peopleResponse['result'][i]['ta_email_id']
                 email_list.append(email_id_existing)
+            
 
             if email_id in email_list:
                 
@@ -2399,18 +2658,20 @@ class CreateNewPeople(Resource):
                                             AND user_uid = \'""" + user_id + """\';""", 'get', conn)
 
                 if len(relationResponse['result']) > 0:
-                   
+                    people_picture_url = helper_upload_img(picture)
+
                     execute("""UPDATE relationship
                                 SET r_timestamp = \'""" + str(ts) + """\'
                                 , relation_type = \'""" + relation_type + """\'
                                 , ta_have_pic = \'""" + str(have_pic).title() + """\'
-                                , ta_picture = \'""" + picture + """\'
+                                , ta_picture = \'""" + people_picture_url + """\'
                                 , important = \'""" + str(important).title() + """\'
                                 WHERE user_uid = \'""" + user_id + """\' AND 
                                 ta_people_id = \'""" + typeResponse['result'][0]['ta_unique_id'] + """\'""", 'post', conn)
 
                 else:
-                    
+                    people_picture_url = helper_upload_img(picture, str(user_id) + '-' + str(NewRelationID))
+
                     execute("""INSERT INTO relationship(
                         id
                         , r_timestamp
@@ -2428,14 +2689,15 @@ class CreateNewPeople(Resource):
                             , \'""" + user_id + """\'
                             , \'""" + relation_type + """\'
                             , \'""" + str(have_pic).title() + """\'
-                            , \'""" + picture + """\'
+                            , \'""" + people_picture_url + """\'
                             , \'""" + str(important).title() + """\'
                             , \'""" + str(0) + """\')""", 'post', conn)
 
             else:
                 NewPeopleIDresponse = execute("CALL get_ta_people_id;", 'get', conn)
                 NewPeopleID = NewPeopleIDresponse['result'][0]['new_id']
-                print(NewPeopleID)
+                people_picture_url = helper_upload_img(picture)
+
                 execute("""INSERT INTO ta_people(
                                         ta_unique_id
                                         , ta_timestamp
@@ -2451,7 +2713,7 @@ class CreateNewPeople(Resource):
                                             , \'""" + email_id + """\'
                                             , \'""" + first_name + """\'
                                             , \'""" + last_name + """\'
-                                            , \'""" + employer + """\'
+                                            , \'""" + '' + """\'
                                             , \'""" + '' + """\'
                                             , \'""" + phone_number + """\')""", 'post', conn)
 
@@ -2472,7 +2734,7 @@ class CreateNewPeople(Resource):
                                             , \'""" + user_id + """\'
                                             , \'""" + relation_type + """\'
                                             , \'""" + str(have_pic).title() + """\'
-                                            , \'""" + picture + """\'
+                                            , \'""" + people_picture_url + """\'
                                             , \'""" + str(important).title() + """\'
                                             , \'""" + str(0) + """\')""", 'post', conn)
 
@@ -2550,35 +2812,36 @@ class UpdateTime(Resource):
             disconnect(conn)
 
 # Update time and time zone
-class CurrentStatus(Resource):
-    def get(self, user_id):    
-        response = {}
-        items = {}
+# class CurrentStatus(Resource):
+#     def get(self, user_id):    
+#         response = {}
+#         items = {}
 
-        try:
-            conn = connect()
+#         try:
+#             conn = connect()
            
             
-            goal_response = execute("""SELECT gr_unique_id, gr_title, is_in_progress, is_complete FROM goals_routines 
-                        WHERE user_id = \'""" + user_id + """\';""", 'get', conn)
+#             goal_response = execute("""SELECT gr_unique_id, gr_title, is_in_progress, is_complete FROM goals_routines 
+#                         WHERE user_id = \'""" + user_id + """\';""", 'get', conn)
 
-            for i in range(len(goal_response['result'])):
-                at_response = execute(""" SELECT at_unique_id, at_title, is_in_progress, is_complete FROM actions_tasks 
-                                WHERE goal_routine_id =  \'""" + goal_response['result'][i]['gr_unique_id'] + """\';""", 'get', conn)
+#             if len(goal_response['result']) > 0
+#                 for i in range(len(goal_response['result'])):
+#                     at_response = execute("""SELECT at_unique_id, at_title, is_in_progress, is_complete FROM actions_tasks 
+#                                     WHERE goal_routine_id =  \'""" + goal_response['result'][i]['gr_unique_id'] + """\';""", 'get', conn)
 
-                if len(at_response['result']) > 0:
-                   
-                    goal_response['result'][i]['actions_tasks'] = at_response['result']
+#                     if len(at_response['result']) > 0:
+                    
+#                         goal_response['result'][i]['actions_tasks'] = at_response['result']
                  
 
-            response['message'] = 'successful'
-            response['result'] = goal_response
+#             response['message'] = 'successful'
+#             response['result'] = goal_response
 
-            return response, 200
-        except:
-            raise BadRequest('Request failed, please try again later.')
-        finally:
-            disconnect(conn)
+#             return response, 200
+#         except:
+#             raise BadRequest('Request failed, please try again later.')
+#         finally:
+#             disconnect(conn)
 
 
 # Update time and time zone
@@ -2873,8 +3136,6 @@ class UpdateAboutMe(Resource):
         try:
             conn = connect()
 
-            data = request.get_json(force=True)
-
             timestamp = getNow()
 
             people_id = []
@@ -2885,114 +3146,70 @@ class UpdateAboutMe(Resource):
             people_important = []
             people_user_id = []
             people_phone_number = []
-
             relation_type = []
-            user_id = data['user_id']
-            first_name = data['first_name']
-            last_name = data['last_name']
-            have_pic = data['have_pic']
-            message_card = data['message_card']
-            message_day = data['message_day']
-            picture = data['picture']
 
-            # user_photo_url = helper_upload_meal_img(picture, user_id)
+            user_id = request.form.get('user_id')
+            first_name = request.form.get('first_name')
+            last_name = request.form.get('last_name')
+            have_pic = request.form.get('have_pic')
+            message_card =  request.form.get('message_card')
+            message_day = request.form.get('message_day')
+            picture = request.files.get('picture')
+            people = request.form.get('people')
+            time_settings = request.form.get("timeSettings")
+            photo_url = request.form.get("photo_url")            
+            time_settings = json.loads(time_settings)
+            afternoon_time = time_settings["afternoon"]
+            day_end = time_settings["dayEnd"]
+            day_start = time_settings["dayStart"]
+            evening_time = time_settings["evening"]
+            morning_time = time_settings["morning"]
+            night_time = time_settings["night"]
+            time_zone = time_settings["timeZone"]
+            print(time_settings)
+          
 
-            if len(data['people']) > 0:
-                for i in range(len(data['people'])):
-                    people_id.append(data['people'][i]['ta_people_id'])
-                    people_name.append(data['people'][i]['name'])
-                    people_relationship.append(data['people'][i]['relationship'])
-                    people_phone_number.append(data['people'][i]['phone_number'])
-                    people_important.append(data['people'][i]['important'])
-                    people_have_pic.append(data['people'][i]['have_pic'])
-                    people_pic.append(data['people'][i]['pic'])
-
-            afternoon_time = data['timeSettings']["afternoon"]
-            day_end = data['timeSettings']["dayEnd"]
-            day_start = data['timeSettings']["dayStart"]
-            evening_time = data['timeSettings']["evening"]
-            morning_time = data['timeSettings']["morning"]
-            night_time = data['timeSettings']["night"]
-            time_zone = data['timeSettings']["timeZone"]
-
-            # Updating user data
-            execute("""UPDATE  users
-                            SET 
-                                user_first_name = \'""" + first_name + """\'
-                                , user_have_pic = \'""" + str(have_pic).title() + """\'
-                                , user_picture = \'""" + str(picture) + """\'
-                                , message_card = \'""" + str(message_card) + """\'
-                                , message_day = \'""" + str(message_day) + """\'
-                                , user_last_name =  \'""" + last_name + """\'
-                                , time_zone = \'""" + str(time_zone) + """\'
-                                , morning_time = \'""" + str(morning_time) + """\'
-                                , afternoon_time = \'""" + str(afternoon_time) + """\'
-                                , evening_time = \'""" + str(evening_time) + """\'
-                                , night_time = \'""" + str(night_time) + """\'
-                                , day_start = \'""" + str(day_start) + """\'
-                                , day_end = \'""" + str(day_end) + """\'
-                            WHERE user_unique_id = \'""" + user_id + """\' ;""", 'post', conn)
-
-            for i in range(len(people_id)):
-                list = people_name[i].split(" ", 1)
-                first_name = list[0]
-                if len(list) == 1:
-                    last_name = ''
-                else:
-                    last_name = list[1]
-
-                execute("""UPDATE  ta_people
-                            SET 
-                                ta_first_name = \'""" + first_name + """\'
-                                , ta_timestamp = \'""" + timestamp + """\'
-                                , ta_last_name = \'""" + last_name + """\'
-                                , ta_phone_number =  \'""" + str(people_phone_number[i]) + """\'
-                            WHERE ta_unique_id = \'""" + people_id[i] + """\' ;""", 'post', conn)
-
-                relationResponse = execute("""SELECT id FROM relationship 
-                            WHERE ta_people_id = \'""" + people_id[i] + """\' 
-                            and user_uid = \'""" + user_id + """\';""", 'get', conn)
-                                            
-                if len(relationResponse['result']) > 0:
-                
-                    items = execute("""UPDATE  relationship
-                                    SET 
-                                        r_timestamp = \'""" + timestamp + """\'
-                                        , relation_type = \'""" + people_relationship[i] + """\'
-                                        , ta_have_pic =  \'""" + str(people_have_pic[i]).title() + """\'
-                                        , ta_picture = \'""" + people_pic[i] + """\'
-                                        , important = \'""" + str(people_important[i]).title() + """\'
-                                    WHERE ta_people_id = \'""" + people_id[i] + """\' 
-                                    and user_uid = \'""" + user_id + """\' ;""", 'post', conn)
-
-                if len(relationResponse['result']) == 0:
-                    print("P")
-                    NewRelationIDresponse = execute("Call get_relation_id;", 'get', conn)
-                    NewRelationID = NewRelationIDresponse['result'][0]['new_id']
-
-                    execute("""INSERT INTO relationship
-                                        (id
-                                        , ta_people_id
-                                        , user_uid
-                                        , r_timestamp
-                                        , relation_type
-                                        , ta_have_pic
-                                        , ta_picture
-                                        , important
-                                        , advisor)
-                                        VALUES 
-                                        ( \'""" + NewRelationID + """\'
-                                        , \'""" + people_id[i] + """\'
-                                        , \'""" + user_id + """\'
-                                        , \'""" + timestamp + """\'
-                                        , \'""" + people_relationship[i] + """\'
-                                        , \'""" + str(people_have_pic[i]).title() + """\'
-                                        , \'""" + people_pic[i] + """\'
-                                        , \'""" + str(people_important[i]).title() + """\'
-                                        , \'""" + str(0) + """\');""", 'post', conn)
+            if not picture:
+                execute("""UPDATE  users
+                                SET 
+                                    user_first_name = \'""" + first_name + """\'
+                                    , user_timestamp = \'""" + timestamp + """\'
+                                    , user_have_pic = \'""" + str(have_pic).title() + """\'
+                                    , user_picture = \'""" + photo_url + """\'
+                                    , message_card = \'""" + str(message_card) + """\'
+                                    , message_day = \'""" + str(message_day) + """\'
+                                    , user_last_name =  \'""" + last_name + """\'
+                                    , time_zone = \'""" + str(time_zone) + """\'
+                                    , morning_time = \'""" + str(morning_time) + """\'
+                                    , afternoon_time = \'""" + str(afternoon_time) + """\'
+                                    , evening_time = \'""" + str(evening_time) + """\'
+                                    , night_time = \'""" + str(night_time) + """\'
+                                    , day_start = \'""" + str(day_start) + """\'
+                                    , day_end = \'""" + str(day_end) + """\'
+                                WHERE user_unique_id = \'""" + user_id + """\' ;""", 'post', conn)
+            else:
+                user_photo_url = helper_upload_img(picture)
+                execute("""UPDATE  users
+                                SET 
+                                    user_first_name = \'""" + first_name + """\'
+                                    , user_timestamp = \'""" + timestamp + """\'
+                                    , user_have_pic = \'""" + str(have_pic).title() + """\'
+                                    , user_picture = \'""" + str(user_photo_url) + """\'
+                                    , message_card = \'""" + str(message_card) + """\'
+                                    , message_day = \'""" + str(message_day) + """\'
+                                    , user_last_name =  \'""" + last_name + """\'
+                                    , time_zone = \'""" + str(time_zone) + """\'
+                                    , morning_time = \'""" + str(morning_time) + """\'
+                                    , afternoon_time = \'""" + str(afternoon_time) + """\'
+                                    , evening_time = \'""" + str(evening_time) + """\'
+                                    , night_time = \'""" + str(night_time) + """\'
+                                    , day_start = \'""" + str(day_start) + """\'
+                                    , day_end = \'""" + str(day_end) + """\'
+                                WHERE user_unique_id = \'""" + user_id + """\' ;""", 'post', conn)
+            
             
             response['message'] = 'successful'
-            response['result'] = 'Important people changed'
+            response['result'] = 'Update to about me successful'
 
             return response, 200
         except:
@@ -3031,7 +3248,7 @@ class UpdateAboutMe2(Resource):
             people = request.form.get('people')
             time_settings = request.form.get("timeSettings")
 
-            user_photo_url = helper_upload_img(picture, user_id)
+            user_photo_url = helper_upload_img(picture)
             print(user_photo_url)
             print(people)
             people = json.loads(people)
@@ -3147,6 +3364,154 @@ class UpdateAboutMe2(Resource):
             disconnect(conn)
 
 # Update new user
+class UpdatePeople(Resource):
+    def post(self):    
+        response = {}
+        items = {}
+
+        try:
+            conn = connect()
+
+            timestamp = getNow()
+
+            user_id = request.form.get('user_id')
+            ta_id = request.form.get('ta_id')
+            people_id = request.form.get('ta_people_id')
+            people_name = request.form.get('name')
+            people_relationship = request.form.get('relationship')
+            people_phone_number = request.form.get('phone_number')
+            people_important = request.form.get('important')
+            people_have_pic = request.form.get('have_pic')
+            people_pic = request.files.get('pic')
+            photo_url = request.form.get("photo_url")
+
+            list = people_name.split(" ", 1)
+            first_name = list[0]
+            if len(list) == 1:
+                last_name = ''
+            else:
+                last_name = list[1]
+
+            execute("""UPDATE  ta_people
+                        SET 
+                            ta_first_name = \'""" + first_name + """\'
+                            , ta_timestamp = \'""" + timestamp + """\'
+                            , ta_last_name = \'""" + last_name + """\'
+                            , ta_phone_number =  \'""" + people_phone_number + """\'
+                        WHERE ta_unique_id = \'""" + people_id + """\' ;""", 'post', conn)
+
+            relationResponse = execute("""SELECT id FROM relationship 
+                            WHERE ta_people_id = \'""" + people_id + """\' 
+                            and user_uid = \'""" + user_id + """\';""", 'get', conn)
+
+            people_picture_url = ""
+
+            if not people_pic:
+                         
+                if len(relationResponse['result']) > 0:
+            
+                    items = execute("""UPDATE  relationship
+                                    SET 
+                                        r_timestamp = \'""" + timestamp + """\'
+                                        , relation_type = \'""" + people_relationship + """\'
+                                        , ta_have_pic =  \'""" + str(people_have_pic).title() + """\'
+                                        , ta_picture = \'""" + photo_url + """\'
+                                        , important = \'""" + str(people_important).title() + """\'
+                                    WHERE ta_people_id = \'""" + people_id + """\' 
+                                    and user_uid = \'""" + user_id + """\' ;""", 'post', conn)
+
+                if len(relationResponse['result']) == 0:
+                    NewRelationIDresponse = execute("Call get_relation_id;", 'get', conn)
+                    NewRelationID = NewRelationIDresponse['result'][0]['new_id']
+
+                    execute("""INSERT INTO relationship
+                                        (id
+                                        , ta_people_id
+                                        , user_uid
+                                        , r_timestamp
+                                        , relation_type
+                                        , ta_have_pic
+                                        , ta_picture
+                                        , important
+                                        , advisor)
+                                        VALUES 
+                                        ( \'""" + NewRelationID + """\'
+                                        , \'""" + people_id + """\'
+                                        , \'""" + user_id + """\'
+                                        , \'""" + timestamp + """\'
+                                        , \'""" + people_relationship + """\'
+                                        , \'""" + str(people_have_pic).title() + """\'
+                                        , \'""" + photo_url + """\'
+                                        , \'""" + str(people_important).title() + """\'
+                                        , \'""" + str(0) + """\');""", 'post', conn)
+            
+
+            else:
+                people_picture_url = helper_upload_img(people_pic)
+
+                if len(relationResponse['result']) > 0:
+                
+                    items = execute("""UPDATE  relationship
+                                    SET 
+                                        r_timestamp = \'""" + timestamp + """\'
+                                        , relation_type = \'""" + people_relationship + """\'
+                                        , ta_have_pic =  \'""" + str(people_have_pic).title() + """\'
+                                        , ta_picture = \'""" + people_picture_url + """\'
+                                        , important = \'""" + str(people_important).title() + """\'
+                                    WHERE ta_people_id = \'""" + people_id + """\' 
+                                    and user_uid = \'""" + user_id + """\' ;""", 'post', conn)
+
+                if len(relationResponse['result']) == 0:
+                    NewRelationIDresponse = execute("Call get_relation_id;", 'get', conn)
+                    NewRelationID = NewRelationIDresponse['result'][0]['new_id']
+
+                    execute("""INSERT INTO relationship
+                                        (id
+                                        , ta_people_id
+                                        , user_uid
+                                        , r_timestamp
+                                        , relation_type
+                                        , ta_have_pic
+                                        , ta_picture
+                                        , important
+                                        , advisor)
+                                        VALUES 
+                                        ( \'""" + NewRelationID + """\'
+                                        , \'""" + people_id + """\'
+                                        , \'""" + user_id + """\'
+                                        , \'""" + timestamp + """\'
+                                        , \'""" + people_relationship + """\'
+                                        , \'""" + str(people_have_pic).title() + """\'
+                                        , \'""" + people_picture_url + """\'
+                                        , \'""" + str(people_important).title() + """\'
+                                        , \'""" + str(0) + """\');""", 'post', conn)
+
+                NewIDresponse = execute("CALL get_icon_id;",  'get', conn)
+                NewID = NewIDresponse['result'][0]['new_id']
+                
+                execute("""INSERT INTO icons(
+                            uid
+                            , url
+                            , Description
+                            , user_id
+                            , ta_id
+                            )VALUES(
+                                \'""" + NewID + """\'
+                                , \'""" + people_picture_url + """\'
+                                , \'""" + 'People Picture' + """\'
+                                , \'""" + user_id + """\'
+                                , \'""" + ta_id + """\');""", 'post', conn)
+            
+            response['message'] = 'successful'
+            response['result'] = 'Update to People successful'
+
+            return response, 200
+        except:
+            raise BadRequest('Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
+# Update new user
 class UpdateNameTimeZone(Resource):
     def post(self):    
         response = {}
@@ -3202,7 +3567,7 @@ class UpdateNameTimeZone(Resource):
                         , \'""" + 'advisor' + """\'
                         , \'""" + 'False' + """\'
                         , \'""" + '' + """\'
-                        , \'""" + 'False' + """\'
+                        , \'""" + 'True' + """\'
                         , \'""" + str(1) + """\');""", 'post', conn)
 
             response['message'] = 'successful'
@@ -3725,6 +4090,224 @@ class GoogleCalenderEvents(Resource):
         finally:
             disconnect(conn)
 
+class GetIcons(Resource):
+    def get(self):
+        response = {}
+        try:
+            conn = connect()
+
+            items = execute("""SELECT url FROM icons where Description <> 'People Picture' and Description <> 'Image Uploaded';""", 'get', conn)
+            print(items)
+            response['message'] = 'successful'
+            response['result'] = items['result']
+            print(response)
+            return response, 200
+        except:
+            raise BadRequest('Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
+class GetImages(Resource):
+    def get(self, user_id):
+        response = {}
+        try:
+            conn = connect()
+
+            items = execute("""SELECT url FROM icons where Description = 'Image Uploaded' and user_id = \'""" +user_id+ """\';""", 'get', conn)
+            print(items)
+            response['message'] = 'successful'
+            response['result'] = items['result']
+            print(response)
+            return response, 200
+        except:
+            raise BadRequest('Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
+class GetPeopleImages(Resource):
+    def get(self, ta_id):
+        response = {}
+        try:
+            conn = connect()
+
+            items = execute("""SELECT url FROM icons where Description = 'People Picture' and ta_id = \'""" +ta_id+ """\';""", 'get', conn)
+            print(items)
+            response['message'] = 'successful'
+            response['result'] = items['result']
+            print(response)
+            return response, 200
+        except:
+            raise BadRequest('Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
+class UploadIcons(Resource):
+    def post(self):
+        response = {}
+        try:
+            conn = connect()
+            data = request.get_json(force=True)
+            photo_url = data['url']
+            description = data['description']
+            NewIDresponse = execute("CALL get_icon_id;",  'get', conn)
+            NewID = NewIDresponse['result'][0]['new_id']
+
+            new_icon_url = helper_icon_img(photo_url)
+            print(new_icon_url)
+            execute("""INSERT INTO icons(
+                        uid
+                        , Description
+                        , url
+                        )VALUES(
+                            \'""" + NewID + """\'
+                            , \'""" + description + """\'
+                            , \'""" + new_icon_url + """\');""", 'post', conn)
+            response['message'] = "Uploaded"
+            return response, 200
+        except:
+            raise BadRequest('Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
+class GetHistory(Resource):
+    def get(self, user_id):
+        response = {}
+        try:
+            conn = connect()
+
+            items = execute("""SELECT * FROM history where user_id = \'""" +user_id+ """\';""", 'get', conn)
+
+            for i in range(len(items['result'])):
+
+                details_json = json.loads(items['result'][i]['details'])
+                keys_list = details_json.keys()
+                keys = keys_list
+                for currKey, value in list(details_json.items()):
+                    if currKey[0] == '4':
+                        actions = execute("""SELECT * FROM actions_tasks where at_unique_id = \'""" +currKey+ """\';""", 'get', conn)
+                        if len(actions['result']) > 0:
+                            for j in range(len(actions['result'])):
+                                details_json[actions['result'][0]['goal_routine_id']][currKey] = value
+                                details_json[actions['result'][0]['goal_routine_id']][currKey]['title'] = actions['result'][0]['at_title']
+                        del details_json[currKey]
+                    if currKey[0] == '3':
+                        goal = execute("""SELECT * FROM goals_routines where gr_unique_id = \'""" +currKey+ """\';""", 'get', conn)
+                        details_json[currKey]['title'] = goal['result'][0]['gr_title']
+
+                items['result'][i]['details'] = details_json
+
+
+            response['message'] = 'successful'
+            response['result'] = items['result']
+            return response, 200
+        except:
+            raise BadRequest('Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
+class CurrentStatus(Resource):
+    def get(self, user_id):
+        response = {}
+        try:
+            conn = connect()
+
+            goals = execute("""SELECT gr_unique_id, gr_title, is_in_progress, is_complete FROM goals_routines where user_id = \'""" +user_id+ """\';""", 'get', conn)
+            user_history = {}
+
+            if len(goals['result']) > 0:
+                for i in range(len(goals['result'])):
+                    curr_key = goals['result'][i]['gr_unique_id']
+                    user_history[curr_key] = {'title':goals['result'][i]['gr_title'], 'is_complete': goals['result'][i]['is_complete'], 'is_in_progress': goals['result'][i]['is_in_progress']}
+                        
+                    actions = execute("""SELECT at_unique_id, at_title, is_complete, is_in_progress FROM actions_tasks 
+                                        WHERE goal_routine_id = \'""" +curr_key+ """\';""", 'get', conn)
+
+                    if len(actions['result']) > 0:
+                        for i in range(len(actions['result'])):
+                            print(actions['result'][i])
+                            user_history[curr_key][actions['result'][i]['at_unique_id']] = {'title': actions['result'][i]['at_title'],  'is_complete': actions['result'][i]['is_complete'], 'is_in_progress': actions['result'][i]['is_in_progress']}
+
+            response['message'] = 'successful'
+            response['result'] = user_history
+            return response, 200
+        except:
+            raise BadRequest('Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
+class GetUserAndTime(Resource):
+    def get(self):
+        response = {}
+        try:
+            conn = connect()
+
+            items = execute("""SELECT user_unique_id, day_end, time_zone FROM users;""", 'get', conn)
+
+            response['message'] = 'successful'
+            response['result'] = items['result']
+            return response, 200
+        except:
+            raise BadRequest('Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
+class ChangeHistory(Resource):
+    def post(self, user_id):
+        response = {}
+        try:
+            conn = connect()
+
+            NewIDresponse = execute("CALL get_history_id;",  'get', conn)
+            NewID = NewIDresponse['result'][0]['new_id']
+            date_format='%m/%d/%Y %H:%M:%S'
+            date = datetime.now(tz=pytz.utc)
+            date = date.astimezone(timezone('US/Pacific'))
+            date = date.strftime(date_format)
+
+            goals = execute("""SELECT gr_unique_id, is_complete, is_in_progress FROM goals_routines WHERE user_id = \'""" +user_id+ """\';""", 'get', conn)
+            
+            user_history = {}
+            
+            if len(goals['result']) > 0:
+                for i in range(len(goals['result'])):
+                    user_history[goals['result'][i]['gr_unique_id']] = {'is_complete': goals['result'][i]['is_complete'], 'is_in_progress': goals['result'][i]['is_in_progress']}
+                    
+                    actions = execute("""SELECT at_unique_id, is_complete, is_in_progress FROM actions_tasks 
+                                        WHERE goal_routine_id = \'""" +goals['result'][i]['gr_unique_id']+ """\';""", 'get', conn)
+                    
+                    if len(actions['result']) > 0:
+                        for i in range(len(actions['result'])):
+                            user_history[actions['result'][i]['at_unique_id']] = {'is_complete': actions['result'][i]['is_complete'], 'is_in_progress': actions['result'][i]['is_in_progress']}
+
+            execute("""INSERT INTO history                        
+                        (id
+                        , user_id
+                        , date
+                        , details)
+                        VALUES
+                        (
+                         \'""" +NewID+ """\'
+                        ,\'""" +user_id+ """\'
+                        ,\'""" +date+ """\'
+                        ,\'""" +str(json.dumps(user_history))+ """\'
+                        );
+                        """, 'post', conn)
+
+            if len(goals['result']) > 0:
+                for i in range(len(goals['result'])):
+                    execute("""UPDATE goals_routines
+                                SET is_in_progress = \'""" +'False'+"""\'
+                                , is_complete = \'""" +'False'+"""\'
+                                WHERE gr_unique_id = \'"""+goals['result'][i]['gr_unique_id']+"""\';""", 'post', conn)
+
+            response['message'] = 'successful'
+            
+            return response, 200
+        except:
+            raise BadRequest('Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
 # New APIs, uses connect() and disconnect()
 # Create new api template URL
 # api.add_resource(TemplateApi, '/api/v2/templateapi')
@@ -3746,9 +4329,14 @@ api.add_resource(TALogin, '/api/v2/loginTA/<string:email_id>/<string:password>')
 api.add_resource(TASocialLogin, '/api/v2/loginSocialTA/<string:email_id>') #working
 api.add_resource(Usertoken, '/api/v2/usersToken/<string:user_id>') #working
 api.add_resource(UserLogin, '/api/v2/userLogin/<string:email_id>') #working
-# api.add_resource(CurrentStatus, '/api/v2/currentStatus/<string:user_id>') #working
+api.add_resource(CurrentStatus, '/api/v2/currentStatus/<string:user_id>') #working
 api.add_resource(GoogleCalenderEvents, '/api/v2/calenderEvents')
-
+api.add_resource(GetIcons, '/api/v2/getIcons')
+api.add_resource(GetImages, '/api/v2/getImages/<string:user_id>')
+api.add_resource(GetPeopleImages, '/api/v2/getPeopleImages/<string:ta_id>')
+api.add_resource(GetHistory, '/api/v2/getHistory/<string:user_id>')
+api.add_resource(GetUserAndTime, '/api/v2/getUserAndTime')
+# api.add_resource(CurrentStatus, '/api/v2/cy=urrentStatus')
 
 # POST requests
 api.add_resource(AnotherTAAccess, '/api/v2/anotherTAAccess') #working
@@ -3758,6 +4346,7 @@ api.add_resource(AddNewGR, '/api/v2/addGR')
 api.add_resource(AddNewGR2, '/api/v2/addGR2')
 api.add_resource(UpdateGR, '/api/v2/updateGR')
 api.add_resource(UpdateGR2, '/api/v2/updateGR2')
+
 api.add_resource(UpdateAT, '/api/v2/updateAT')
 api.add_resource(UpdateAT2, '/api/v2/updateAT2')
 api.add_resource(DeleteAT, '/api/v2/deleteAT')
@@ -3775,6 +4364,10 @@ api.add_resource(UpdateGRWatchMobile, '/api/v2/udpateGRWatchMobile')
 api.add_resource(UpdateATWatchMobile, '/api/v2/updateATWatchMobile')
 api.add_resource(Login, '/api/v2/login')
 api.add_resource(UpdateAboutMe2, '/api/v2/update')
+api.add_resource(UploadIcons, '/api/v2/uploadIcons')
+api.add_resource(UpdatePeople, '/api/v2/updatePeople')
+api.add_resource(ChangeHistory, '/api/v2/changeHistory/<string:user_id>')
+
 # api.add_resource(access_refresh_update, '/api/v2/accessRefreshUpdate')
 
 
