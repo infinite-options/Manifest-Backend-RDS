@@ -3154,14 +3154,42 @@ class ExistingUser(Resource):
             conn = connect()
             data = request.get_json(force=True)
 
-           
+            timestamp = getNow()           
             email_id = data['email_id']
+            ta_people_id = data['ta_people_id']
+            user_id = data['user_id']
 
             user_id_response = execute("""SELECT user_unique_id, new_account FROM users
                                             WHERE user_email_id = \'""" +email_id+ """\';""", 'get', conn)
             
             print(user_id_response['result'])
             if len(user_id_response['result']) > 0:
+                RelationshipResponse = execute("""SELECT * FROM relationship where ta_people_id = \'"""+ta_people_id+"""\' and user_uid = \'"""+user_id_response['result'][0]['user_unique_id']+"""\';""", 'get', conn)
+                if len(RelationshipResponse['result']) == 0:
+                    if user_id_response['result'][0]['new_account'] == 'False':
+                        NewRelationIDresponse = execute("Call get_relation_id;", 'get', conn)
+                        NewRelationID = NewRelationIDresponse['result'][0]['new_id']
+                        execute("""INSERT INTO relationship
+                                                (id
+                                                , ta_people_id
+                                                , user_uid
+                                                , r_timestamp
+                                                , relation_type
+                                                , ta_have_pic
+                                                , ta_picture
+                                                , important
+                                                , advisor)
+                                                VALUES 
+                                                ( \'""" + NewRelationID + """\'
+                                                , \'""" + ta_people_id + """\'
+                                                , \'""" +user_id_response['result'][0]['user_unique_id']+ """\'
+                                                , \'""" + timestamp + """\'
+                                                , \'""" + 'advisor' + """\'
+                                                , \'""" + 'False' + """\'
+                                                , \'""" + '' + """\'
+                                                , \'""" + 'True' + """\'
+                                                , \'""" + str(1) + """\');""", 'post', conn)
+                        print("Added")
                 response['message'] = user_id_response['result'][0]['new_account']
 
             else:
