@@ -423,36 +423,42 @@ class ListAllTA(Resource):
 
         try:
             conn = connect()
-            query = None
-            if user_id is None:
-                query = """SELECT DISTINCT unique_id
-                            , CONCAT(first_name, SPACE(1), last_name) as name
-                            , first_name
-                            , last_name
-                            FROM ta_people
-                            JOIN relationship on unique_id = ta_people_id
-                            WHERE type = 'trusted_advisor';"""
+            
                 
-            else:
-                query = """ SELECT DISTINCT ta_unique_id
-                                    , CONCAT(ta_first_name, SPACE(1), ta_last_name) as name
-                                    , ta_first_name
-                                    , ta_last_name
-                            FROM ta_people
-                            JOIN relationship on ta_unique_id = ta_people_id
-                            WHERE user_uid = \'""" +user_id+ """\'
-                            and advisor = '1';"""
+            query = """ SELECT DISTINCT ta_unique_id
+                                , CONCAT(ta_first_name, SPACE(1), ta_last_name) as name
+                                , ta_first_name
+                                , ta_last_name
+                        FROM ta_people
+                        JOIN relationship on ta_unique_id = ta_people_id
+                        WHERE user_uid = \'""" +user_id+ """\'
+                        and advisor = '1';"""
 
-                query2 = """SELECT DISTINCT ta_unique_id
-                                    , CONCAT(ta_first_name, SPACE(1), ta_last_name) as name
-                                    , ta_first_name
-                                    , ta_last_name
-                            FROM ta_people
-                            JOIN relationship on ta_unique_id = ta_people_id
-                            WHERE advisor = '1';"""
+            query2 = """SELECT DISTINCT ta_unique_id
+                                , CONCAT(ta_first_name, SPACE(1), ta_last_name) as name
+                                , ta_first_name
+                                , ta_last_name
+                        FROM ta_people
+                        JOIN relationship on ta_unique_id = ta_people_id
+                        WHERE advisor = '1';"""
+
+            query3 = """SELECT ta_unique_id
+                                , CONCAT(ta_first_name, SPACE(1), ta_last_name) as name
+                                , ta_first_name
+                                , ta_last_name
+                         FROM ta_people;"""
+            query4 = """SELECT DISTINCT ta_unique_id
+                                , CONCAT(ta_first_name, SPACE(1), ta_last_name) as name
+                                , ta_first_name
+                                , ta_last_name
+                        FROM ta_people
+                        JOIN relationship on ta_unique_id = ta_people_id;"""
+
 
             idTAResponse = execute(query, 'get', conn)
             allTAResponse = execute(query2, 'get', conn)
+            allTATableResponse = execute(query3, 'get', conn)
+            allPeopleRepsonse = execute(query4, 'get', conn)
 
             list = []
             final_list = []
@@ -463,6 +469,15 @@ class ListAllTA(Resource):
             for i in range(len(allTAResponse['result'])):
                 if allTAResponse['result'][i]['ta_unique_id'] not in list:
                     final_list.append(allTAResponse['result'][i])
+
+            peopleList = []
+            for i in range(len(allPeopleRepsonse['result'])):
+                peopleList.append(allPeopleRepsonse['result'][i]['ta_unique_id'])
+
+            for i in range(len(allTATableResponse['result'])):
+                if allTATableResponse['result'][i]['ta_unique_id'] not in peopleList:
+                    final_list.append(allTATableResponse['result'][i])
+
 
             response['message'] = 'successful'
             response['result'] = final_list
@@ -3106,7 +3121,8 @@ class CreateNewUser(Resource):
                                 , google_refresh_token
                                 , user_have_pic
                                 , user_picture
-                                , user_social_media)
+                                , user_social_media
+                                , new_account)
                             VALUES ( 
                                 \'""" + new_user_id + """\'
                                 , \'""" + timestamp + """\'
@@ -3115,11 +3131,41 @@ class CreateNewUser(Resource):
                                 , \'""" + google_refresh_token + """\'
                                 , \'""" + 'False' + """\'
                                 , \'""" + '' + """\'
-                                , \'""" + 'GOOGLE' + """\')""", 'post', conn)
+                                , \'""" + 'GOOGLE' + """\'
+                                , \'""" + 'True' + """\')""", 'post', conn)
                 
 
                 response['message'] = 'successful'
                 response['result'] = new_user_id
+
+            return response, 200
+        except:
+            raise BadRequest('Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
+# Creating new user
+class ExistingUser(Resource):
+    def post(self):    
+        response = {}
+        items = {}
+        timestamp = getNow()
+        try:
+            conn = connect()
+            data = request.get_json(force=True)
+
+           
+            email_id = data['email_id']
+
+            user_id_response = execute("""SELECT user_unique_id, new_account FROM users
+                                            WHERE user_email_id = \'""" +email_id+ """\';""", 'get', conn)
+            
+            print(user_id_response['result'])
+            if len(user_id_response['result']) > 0:
+                response['message'] = user_id_response['result'][0]['new_account']
+
+            else:
+                response['message'] = 'true'
 
             return response, 200
         except:
@@ -3544,6 +3590,7 @@ class UpdateNameTimeZone(Resource):
                                 , night_time = \'""" + '21:00' + """\'
                                 , day_start = \'""" + '00:00' + """\'
                                 , day_end = \'""" + '23:59' + """\'
+                                , new_account = \'""" + 'False' + """\'
                             WHERE user_unique_id = \'""" + user_unique_id + """\' ;""", 'post', conn)
 
             NewRelationIDresponse = execute("Call get_relation_id;", 'get', conn)
@@ -4336,7 +4383,6 @@ api.add_resource(GetImages, '/api/v2/getImages/<string:user_id>')
 api.add_resource(GetPeopleImages, '/api/v2/getPeopleImages/<string:ta_id>')
 api.add_resource(GetHistory, '/api/v2/getHistory/<string:user_id>')
 api.add_resource(GetUserAndTime, '/api/v2/getUserAndTime')
-# api.add_resource(CurrentStatus, '/api/v2/cy=urrentStatus')
 
 # POST requests
 api.add_resource(AnotherTAAccess, '/api/v2/anotherTAAccess') #working
@@ -4346,7 +4392,6 @@ api.add_resource(AddNewGR, '/api/v2/addGR')
 api.add_resource(AddNewGR2, '/api/v2/addGR2')
 api.add_resource(UpdateGR, '/api/v2/updateGR')
 api.add_resource(UpdateGR2, '/api/v2/updateGR2')
-
 api.add_resource(UpdateAT, '/api/v2/updateAT')
 api.add_resource(UpdateAT2, '/api/v2/updateAT2')
 api.add_resource(DeleteAT, '/api/v2/deleteAT')
@@ -4367,6 +4412,7 @@ api.add_resource(UpdateAboutMe2, '/api/v2/update')
 api.add_resource(UploadIcons, '/api/v2/uploadIcons')
 api.add_resource(UpdatePeople, '/api/v2/updatePeople')
 api.add_resource(ChangeHistory, '/api/v2/changeHistory/<string:user_id>')
+api.add_resource(ExistingUser, '/api/v2/existingUser')
 
 # api.add_resource(access_refresh_update, '/api/v2/accessRefreshUpdate')
 
