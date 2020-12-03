@@ -2870,7 +2870,6 @@ class Reset(Resource):
             data = request.get_json(force=True)
            
             
-            
             execute(""" UPDATE goals_routines
                         SET 
                         is_in_progress = \'""" + 'False' + """\'
@@ -2886,6 +2885,33 @@ class Reset(Resource):
 
             response['message'] = 'successful'
             response['result'] = items
+
+            return response, 200
+        except:
+            raise BadRequest('Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
+# Update time and time zone
+class ResetGR(Resource):
+    def post(self):    
+        response = {}
+        items = {}
+
+        try:
+            conn = connect()
+            data = request.get_json(force=True)
+            is_in_progress = data['is_in_progress']
+            is_complete = data['is_complete']
+            gr_unique_id = data['gr_unique_id']
+            
+            execute(""" UPDATE goals_routines
+                        SET 
+                        is_in_progress = \'""" + str(is_in_progress).title() + """\'
+                        , is_complete = \'""" + str(is_complete).title() + """\'
+                        WHERE gr_unique_id = \'""" + gr_unique_id + """\';""", 'post', conn)
+
+            response['message'] = 'successful'
 
             return response, 200
         except:
@@ -3157,7 +3183,6 @@ class ExistingUser(Resource):
             timestamp = getNow()           
             email_id = data['email_id']
             ta_people_id = data['ta_people_id']
-            user_id = data['user_id']
 
             user_id_response = execute("""SELECT user_unique_id, new_account FROM users
                                             WHERE user_email_id = \'""" +email_id+ """\';""", 'get', conn)
@@ -3165,7 +3190,9 @@ class ExistingUser(Resource):
             print(user_id_response['result'])
             if len(user_id_response['result']) > 0:
                 RelationshipResponse = execute("""SELECT * FROM relationship where ta_people_id = \'"""+ta_people_id+"""\' and user_uid = \'"""+user_id_response['result'][0]['user_unique_id']+"""\';""", 'get', conn)
+                print(RelationshipResponse)
                 if len(RelationshipResponse['result']) == 0:
+                    print(user_id_response['result'][0])
                     if user_id_response['result'][0]['new_account'] == 'False':
                         NewRelationIDresponse = execute("Call get_relation_id;", 'get', conn)
                         NewRelationID = NewRelationIDresponse['result'][0]['new_id']
@@ -4165,13 +4192,81 @@ class GoogleCalenderEvents(Resource):
         finally:
             disconnect(conn)
 
-class GetIcons(Resource):
+class GetIconsHygiene(Resource):
     def get(self):
         response = {}
         try:
             conn = connect()
 
-            items = execute("""SELECT url FROM icons where Description <> 'People Picture' and Description <> 'Image Uploaded';""", 'get', conn)
+            items = execute("""SELECT url FROM icons where Description <> 'People Picture' and Description <> 'Image Uploaded' and Description = 'Hygiene';""", 'get', conn)
+            print(items)
+            response['message'] = 'successful'
+            response['result'] = items['result']
+            print(response)
+            return response, 200
+        except:
+            raise BadRequest('Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
+class GetIconsClothing(Resource):
+    def get(self):
+        response = {}
+        try:
+            conn = connect()
+
+            items = execute("""SELECT url FROM icons where Description <> 'People Picture' and Description <> 'Image Uploaded' and Description = 'CLothing';""", 'get', conn)
+            print(items)
+            response['message'] = 'successful'
+            response['result'] = items['result']
+            print(response)
+            return response, 200
+        except:
+            raise BadRequest('Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
+class GetIconsFood(Resource):
+    def get(self):
+        response = {}
+        try:
+            conn = connect()
+
+            items = execute("""SELECT url FROM icons where Description <> 'People Picture' and Description <> 'Image Uploaded' and Description = 'Food';""", 'get', conn)
+            print(items)
+            response['message'] = 'successful'
+            response['result'] = items['result']
+            print(response)
+            return response, 200
+        except:
+            raise BadRequest('Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
+class GetIconsActivities(Resource):
+    def get(self):
+        response = {}
+        try:
+            conn = connect()
+
+            items = execute("""SELECT url FROM icons where Description <> 'People Picture' and Description <> 'Image Uploaded' and Description = 'Activities';""", 'get', conn)
+            print(items)
+            response['message'] = 'successful'
+            response['result'] = items['result']
+            print(response)
+            return response, 200
+        except:
+            raise BadRequest('Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
+class GetIconsOther(Resource):
+    def get(self):
+        response = {}
+        try:
+            conn = connect()
+
+            items = execute("""SELECT url FROM icons where Description <> 'People Picture' and Description <> 'Image Uploaded' and Description = 'Other';""", 'get', conn)
             print(items)
             response['message'] = 'successful'
             response['result'] = items['result']
@@ -4264,10 +4359,12 @@ class GetHistory(Resource):
                             for j in range(len(actions['result'])):
                                 details_json[actions['result'][0]['goal_routine_id']][currKey] = value
                                 details_json[actions['result'][0]['goal_routine_id']][currKey]['title'] = actions['result'][0]['at_title']
+
                         del details_json[currKey]
                     if currKey[0] == '3':
                         goal = execute("""SELECT * FROM goals_routines where gr_unique_id = \'""" +currKey+ """\';""", 'get', conn)
-                        details_json[currKey]['title'] = goal['result'][0]['gr_title']
+                        if len(goal['result']) > 0:
+                            details_json[currKey]['title'] = goal['result'][0]['gr_title']
 
                 items['result'][i]['details'] = details_json
 
@@ -4326,6 +4423,22 @@ class GetUserAndTime(Resource):
         finally:
             disconnect(conn)
 
+class Notifications(Resource):
+    def get(self):
+        response = {}
+        try:
+            conn = connect()
+
+            items = execute("""SELECT * FROM notifications;""", 'get', conn)
+
+            response['message'] = 'successful'
+            response['result'] = items['result']
+            return response, 200
+        except:
+            raise BadRequest('Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
 class ChangeHistory(Resource):
     def post(self, user_id):
         response = {}
@@ -4335,37 +4448,49 @@ class ChangeHistory(Resource):
             NewIDresponse = execute("CALL get_history_id;",  'get', conn)
             NewID = NewIDresponse['result'][0]['new_id']
             date_format='%m/%d/%Y %H:%M:%S'
-            date = datetime.now(tz=pytz.utc)
-            date = date.astimezone(timezone('US/Pacific'))
-            date = date.strftime(date_format)
+            current = datetime.now(tz=pytz.utc)
+            current = current.astimezone(timezone('US/Pacific'))
+            date = current.strftime(date_format)
+            current_time = current.strftime("%H:%M:%S")
+            current_time = datetime.strptime(current_time, "%H:%M:%S").time()
+            start = dt.time(0, 0, 0)
+            end = dt.time(0, 59, 59)
+            
+            if current_time>start and current_time > end:
+                date_affected = current.date()
+            else:
+                date_affected = current + timedelta(days=-1)
+                date_affected = date_affected.date()
 
-            goals = execute("""SELECT gr_unique_id, is_complete, is_in_progress FROM goals_routines WHERE user_id = \'""" +user_id+ """\';""", 'get', conn)
+            print(date_affected)
+            goals = execute("""SELECT gr_unique_id, gr_title, is_complete, is_in_progress FROM goals_routines WHERE user_id = \'""" +user_id+ """\';""", 'get', conn)
             
             user_history = {}
             
             if len(goals['result']) > 0:
                 for i in range(len(goals['result'])):
-                    user_history[goals['result'][i]['gr_unique_id']] = {'is_complete': goals['result'][i]['is_complete'], 'is_in_progress': goals['result'][i]['is_in_progress']}
+                    user_history[goals['result'][i]['gr_unique_id']] = {'title': goals['result'][i]['gr_title'], 'is_complete': goals['result'][i]['is_complete'], 'is_in_progress': goals['result'][i]['is_in_progress']}
                     
-                    actions = execute("""SELECT at_unique_id, is_complete, is_in_progress FROM actions_tasks 
+                    actions = execute("""SELECT at_unique_id, at_title, is_complete, is_in_progress FROM actions_tasks 
                                         WHERE goal_routine_id = \'""" +goals['result'][i]['gr_unique_id']+ """\';""", 'get', conn)
                     
                     if len(actions['result']) > 0:
                         for i in range(len(actions['result'])):
-                            user_history[actions['result'][i]['at_unique_id']] = {'is_complete': actions['result'][i]['is_complete'], 'is_in_progress': actions['result'][i]['is_in_progress']}
+                            user_history[actions['result'][i]['at_unique_id']] = {'title': actions['result'][i]['at_title'],'is_complete': actions['result'][i]['is_complete'], 'is_in_progress': actions['result'][i]['is_in_progress']}
 
             execute("""INSERT INTO history                        
                         (id
                         , user_id
                         , date
-                        , details)
+                        , details
+                        , date_affected)
                         VALUES
                         (
                          \'""" +NewID+ """\'
                         ,\'""" +user_id+ """\'
                         ,\'""" +date+ """\'
                         ,\'""" +str(json.dumps(user_history))+ """\'
-                        );
+                        ,\'""" +str(date_affected)+ """\');
                         """, 'post', conn)
 
             if len(goals['result']) > 0:
@@ -4406,11 +4531,16 @@ api.add_resource(Usertoken, '/api/v2/usersToken/<string:user_id>') #working
 api.add_resource(UserLogin, '/api/v2/userLogin/<string:email_id>') #working
 api.add_resource(CurrentStatus, '/api/v2/currentStatus/<string:user_id>') #working
 api.add_resource(GoogleCalenderEvents, '/api/v2/calenderEvents')
-api.add_resource(GetIcons, '/api/v2/getIcons')
+api.add_resource(GetIconsHygiene, '/api/v2/getIconsHygiene')
+api.add_resource(GetIconsClothing, '/api/v2/getIconsClothing')
+api.add_resource(GetIconsFood, '/api/v2/getIconsFood')
+api.add_resource(GetIconsActivities, '/api/v2/getIconsActivities')
+api.add_resource(GetIconsOther, '/api/v2/getIconsOther')
 api.add_resource(GetImages, '/api/v2/getImages/<string:user_id>')
 api.add_resource(GetPeopleImages, '/api/v2/getPeopleImages/<string:ta_id>')
 api.add_resource(GetHistory, '/api/v2/getHistory/<string:user_id>')
 api.add_resource(GetUserAndTime, '/api/v2/getUserAndTime')
+api.add_resource(Notifications, '/api/v2/notifications')
 
 # POST requests
 api.add_resource(AnotherTAAccess, '/api/v2/anotherTAAccess') #working
@@ -4441,6 +4571,7 @@ api.add_resource(UploadIcons, '/api/v2/uploadIcons')
 api.add_resource(UpdatePeople, '/api/v2/updatePeople')
 api.add_resource(ChangeHistory, '/api/v2/changeHistory/<string:user_id>')
 api.add_resource(ExistingUser, '/api/v2/existingUser')
+api.add_resource(ResetGR, '/api/v2/resetGR')
 
 # api.add_resource(access_refresh_update, '/api/v2/accessRefreshUpdate')
 
