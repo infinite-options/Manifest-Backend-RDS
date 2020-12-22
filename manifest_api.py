@@ -17,6 +17,8 @@ from oauth2client import GOOGLE_REVOKE_URI, GOOGLE_TOKEN_URI, client
 from io import BytesIO
 from pytz import timezone
 import pytz
+from dateutil.relativedelta import relativedelta
+import math
 
 from werkzeug.exceptions import BadRequest, NotFound
 
@@ -267,6 +269,74 @@ class GoalsRoutines(Resource):
                 res = execute("""Select * from notifications where gr_at_id = \'""" +gr_id+ """\';""", 'get', conn)
                 items['result'][i]['notifications'] = list(res['result'])
             
+            response['message'] = 'successful'
+            response['result'] = items['result']
+
+            return response, 200
+        except:
+            raise BadRequest('Get Routines Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
+# Returns Goals and Routines
+class GetNotifications(Resource):
+    def get(self, user_id = None):
+        response = {}
+        items = {}
+        try:
+
+            conn = connect()
+            data = request.json
+            query = None
+
+            #returns Routines of all users
+            if user_id is None:
+                query = """SELECT * FROM 
+                                goals_routines where user_id='100-000045' or user_id='100-000040' or user_id='100-000048' or user_id='100-000052';"""
+
+            #returns Routines of a Particular user_id
+            else:
+                query = """SELECT * FROM goals_routines WHERE 
+                             user_id = \'""" +user_id+ """\';"""
+            query1 = """SELECT user_unique_id, cust_guid_device_id_notification FROM users;"""
+
+            items = execute(query,'get', conn)
+
+            goal_routine_response = items['result']
+
+            for i in range(len(goal_routine_response)):
+                gr_id = goal_routine_response[i]['gr_unique_id']
+                
+                res = execute("""Select * from notifications where gr_at_id = \'""" +gr_id+ """\';""", 'get', conn)
+
+                print(gr_id)
+                if res['result'][0]['user_ta_id'][0] == '2':
+                    query1 = """SELECT ta_guid_device_id_notification FROM ta_people where ta_unique_id = \'""" +res['result'][0]['user_ta_id']+ """\';"""
+                    items1 = execute(query1, 'get', conn)
+                    guid_response = items1['result']
+                    items['result'][i]['notifications'] = list(res['result'])
+                    items['result'][i]['notifications'][0]['guid'] = guid_response[0]['ta_guid_device_id_notification']
+                else:
+                    query1 = """SELECT user_unique_id, cust_guid_device_id_notification FROM users where user_unique_id = \'""" +res['result'][0]['user_ta_id']+ """\';"""
+                    items1 = execute(query1, 'get', conn)
+                    guid_response = items1['result']
+                    items['result'][i]['notifications'] = list(res['result'])
+                    items['result'][i]['notifications'][0]['guid'] = guid_response[0]['cust_guid_device_id_notification']
+
+                if res['result'][1]['user_ta_id'][0] == '1':
+                    query1 = """SELECT user_unique_id, cust_guid_device_id_notification FROM users where user_unique_id = \'""" +res['result'][1]['user_ta_id']+ """\';"""
+                    items1 = execute(query1, 'get', conn)
+                    guid_response = items1['result']
+                    items['result'][i]['notifications'] = list(res['result'])
+                    items['result'][i]['notifications'][1]['guid'] = guid_response[0]['cust_guid_device_id_notification']
+                else:
+                    query1 = """SELECT ta_guid_device_id_notification FROM ta_people where ta_unique_id = \'""" +res['result'][1]['user_ta_id']+ """\';"""
+                    items1 = execute(query1, 'get', conn)
+                    guid_response = items1['result']
+                    items['result'][i]['notifications'] = list(res['result'])
+                    items['result'][i]['notifications'][1]['guid'] = guid_response[0]['ta_guid_device_id_notification']   
+                    
+            print(items)
             response['message'] = 'successful'
             response['result'] = items['result']
 
@@ -625,7 +695,7 @@ class AddNewGR2(Resource):
             photo = request.files.get('photo')
             photo_url = request.form.get('photo_url')
             repeat = request.form.get('repeat')
-            repeat_ends = request.form.get('repeat_ends')
+            repeat_ends = request.form.get('repeat_type')
             repeat_ends_on = request.form.get('repeat_ends_on')
             repeat_every = request.form.get('repeat_every')
             repeat_frequency = request.form.get('repeat_frequency')
@@ -917,7 +987,7 @@ class AddNewGR(Resource):
             photo = request.files.get('photo')
             photo_url = request.form.get('photo_url')
             repeat = request.form.get('repeat')
-            repeat_ends = request.form.get('repeat_ends')
+            repeat_ends = request.form.get('repeat_type')
             repeat_ends_on = request.form.get('repeat_ends_on')
             repeat_every = request.form.get('repeat_every')
             repeat_frequency = request.form.get('repeat_frequency')
@@ -1028,11 +1098,11 @@ class AddNewGR(Resource):
                             , \'""" + str(is_sublist_available).title() + """\'
                             , \'""" + str(is_timed).title() + """\'
                             , \'""" + photo_url + """\'
-                            , \'""" + str(repeat) + """\'
-                            , \'""" + repeat_ends + """\'
+                            , \'""" + str(repeat).title() + """\'
+                            , \'""" + str(repeat_ends).title() + """\'
                             , \'""" + repeat_ends_on + """\'
-                            , \'""" + str(repeat_every) + """\'
-                            , \'""" + repeat_frequency + """\'
+                            , \'""" + str(repeat_every).title() + """\'
+                            , \'""" + str(repeat_frequency).title() + """\'
                             , \'""" + str(repeat_occurences) + """\'
                             , \'""" + start_day_and_time + """\'
                             , \'""" + json.dumps(dict_week_days) + """\'
@@ -1080,10 +1150,10 @@ class AddNewGR(Resource):
                             , \'""" + str(is_sublist_available).title() + """\'
                             , \'""" + str(is_timed).title() + """\'
                             , \'""" + gr_picture + """\'
-                            , \'""" + str(repeat) + """\'
-                            , \'""" + repeat_ends + """\'
+                            , \'""" + str(repeat).title() + """\'
+                            , \'""" + str(repeat_ends).title() + """\'
                             , \'""" + repeat_ends_on + """\'
-                            , \'""" + str(repeat_every) + """\'
+                            , \'""" + str(repeat_every).title() + """\'
                             , \'""" + repeat_frequency + """\'
                             , \'""" + str(repeat_occurences) + """\'
                             , \'""" + start_day_and_time + """\'
@@ -1236,7 +1306,7 @@ class UpdateGR2(Resource):
             photo = request.files.get('photo')
             photo_url = request.form.get('photo_url')
             repeat = request.form.get('repeat')
-            repeat_ends = request.form.get('repeat_ends')
+            repeat_ends = request.form.get('repeat_type')
             repeat_ends_on = request.form.get('repeat_ends_on')
             repeat_every = request.form.get('repeat_every')
             repeat_frequency = request.form.get('repeat_frequency')
@@ -1414,7 +1484,7 @@ class UpdateGR(Resource):
             photo = request.files.get('photo')
             photo_url = request.form.get('photo_url')
             repeat = request.form.get('repeat')
-            repeat_ends = request.form.get('repeat_ends')
+            repeat_ends = request.form.get('repeat_type')
             repeat_ends_on = request.form.get('repeat_ends_on')
             repeat_every = request.form.get('repeat_every')
             repeat_frequency = request.form.get('repeat_frequency')
@@ -2103,7 +2173,7 @@ class DeleteAT(Resource):
 
 # day's view
 class DailyView(Resource):
-    def get(self, user_id):    
+    def get(self):    
         response = {}
         items = {}
 
@@ -2113,7 +2183,7 @@ class DailyView(Resource):
             theday = dt.date.today()
             dates = [theday]
             vr = VariousRepeatations()
-            items = VariousRepeatations.checkAllDays(vr, dates, user_id, conn)
+            items = VariousRepeatations.checkAllDays(vr, dates, conn)
             response['message'] = 'successful'
             response['result'] = items
 
@@ -2177,7 +2247,7 @@ class MonthlyView(Resource):
             disconnect(conn)
 
 class VariousRepeatations():
-    def checkAllDays(self, dates, user_id, conn):
+    def checkAllDays(self, dates, conn):
         items = {}
         for date in dates:
             if(isinstance(date, str)):
@@ -2195,8 +2265,7 @@ class VariousRepeatations():
                             , start_day_and_time
                             , repeat_frequency
                             , repeat_every from goals_routines
-                        where `repeat` = 'TRUE' and repeat_ends = 'never' and repeat_frequency = 'day'
-                        and user_id = \'""" + user_id + """\';"""]
+                        where `repeat` = 'TRUE' and repeat_type = 'Never' and repeat_frequency = 'DAY';"""]
 
             grResponse = execute(query[0], 'get', conn)
 
@@ -2210,42 +2279,40 @@ class VariousRepeatations():
                         listGR.append(grResponse['result'][i]['gr_unique_id'])
                     new_date = new_date + timedelta(days=grResponse['result'][i]['repeat_every'])
 
-
-            # For never and week frequency
-
-            query.append("""SELECT gr_unique_id
-                                    , start_day_and_time
-                                    , repeat_every
-                                from (SELECT gr_title
-                                        , user_id
-                                        , gr_unique_id
-                                        , start_day_and_time
-                                        , repeat_frequency
-                                        , repeat_every
-                                        , substring_index(substring_index(repeat_week_days, ';', id), ';', -1) as week_days
-                                    FROM goals_routines
-                                            JOIN numbers ON char_length(repeat_week_days) - char_length(replace(repeat_week_days, ';', '')) >= id - 1
-                                    where `repeat` = 'TRUE'
-                                        and repeat_ends = 'never'
-                                        and repeat_frequency = 'week') temp
-                                where dayname(curdate()) = week_days and user_id = \'""" + user_id + """\';""")
-
-            grResponse1 = execute(query[1], 'get', conn)
-
-            for i in range(len(grResponse1['result'])):
-                datetime_str = grResponse1['result'][i]['start_day_and_time']
-                datetime_str = datetime_str.replace(",", "")
-                datetime_object = datetime.strptime(datetime_str, '%m/%d/%Y %I:%M:%S %p').date()
-                start_week = datetime_object.isocalendar()[1]
-                new_week = start_week
-                new_date = datetime_object
-                while(new_date <= cur_date):
-                    if (new_week - start_week) == int(grResponse1['result'][i]['repeat_every']):
-                        start_week = new_week
-                        if (new_week == cur_week):
-                            listGR.append(grResponse1['result'][i]['gr_unique_id'])
-                    new_date = new_date + timedelta(weeks=grResponse1['result'][i]['repeat_every'])
-                    new_week = new_date.isocalendar()[1]
+            # # For never and week frequency
+            # query.append("""SELECT gr_unique_id
+            #                         , start_day_and_time
+            #                         , repeat_every
+            #                     from (SELECT gr_title
+            #                             , user_id
+            #                             , gr_unique_id
+            #                             , start_day_and_time
+            #                             , repeat_frequency
+            #                             , repeat_every
+            #                             , substring_index(substring_index(repeat_week_days, ';', id), ';', -1) as week_days
+            #                         FROM goals_routines
+            #                                 JOIN numbers ON char_length(repeat_week_days) - char_length(replace(repeat_week_days, ';', '')) >= id - 1
+            #                         where `repeat` = 'TRUE'
+            #                             and (repeat_type = 'Never' or repeat_type = 'never')
+            #                             and (repeat_frequency = 'WEEK' or repeat_frequency = 'week')) temp
+            #                     where dayname(curdate()) = week_days;""")
+            # print(query[1])
+            # grResponse1 = execute(query[1], 'get', conn)
+            # print(grResponse1)
+            # for i in range(len(grResponse1['result'])):
+            #     datetime_str = grResponse1['result'][i]['start_day_and_time']
+            #     datetime_str = datetime_str.replace(",", "")
+            #     datetime_object = datetime.strptime(datetime_str, '%m/%d/%Y %I:%M:%S %p').date()
+            #     start_week = datetime_object.isocalendar()[1]
+            #     new_week = start_week
+            #     new_date = datetime_object
+            #     while(new_date <= cur_date):
+            #         if (new_week - start_week) == int(grResponse1['result'][i]['repeat_every']):
+            #             start_week = new_week
+            #             if (new_week == cur_week):
+            #                 listGR.append(grResponse1['result'][i]['gr_unique_id'])
+            #         new_date = new_date + timedelta(weeks=grResponse1['result'][i]['repeat_every'])
+            #         new_week = new_date.isocalendar()[1]
 
             # For never and month frequency
 
@@ -2257,11 +2324,11 @@ class VariousRepeatations():
                                     , repeat_every
                                 FROM goals_routines
                             WHERE `repeat` = 'TRUE'
-                                    AND repeat_ends = 'never'
-                                    AND repeat_frequency = 'month' and user_id = \'""" + user_id + """\';""")
-            
+                                    AND (repeat_type = 'never' or repeat_type = 'Never')
+                                    AND (repeat_frequency = 'month' or repeat_frequency = 'Month' or repeat_frequency = 'MONTH');""")
+            print(query[2])
             grResponse2 = execute(query[2], 'get', conn)
-
+            print(grResponse2)
 
             for i in range(len(grResponse2['result'])):
                 datetime_str = grResponse2['result'][i]['start_day_and_time']
@@ -2618,6 +2685,275 @@ class VariousRepeatations():
                     items.update({id_gr:new_item})
 
         return items
+
+class TodayGR(Resource):
+    def get(self):
+        items = {}
+        response = {}
+        try:
+            conn = connect()
+            theday = dt.date.today()
+        
+            cur_date = theday
+            cur_week = cur_date.isocalendar()[1]
+            cur_month = cur_date.month
+            cur_year = cur_date.year
+            listGR = []
+
+            # For never and day frequency
+            query = ["""SELECT gr_title
+                            , user_id
+                            , gr_unique_id
+                            , start_day_and_time
+                            , repeat_frequency
+                            , repeat_every
+                            , `repeat`
+                            , repeat_type
+                            , repeat_occurences
+                            , repeat_ends_on
+                             from goals_routines;"""]
+            
+            grResponse = execute(query[0], 'get', conn)
+
+            for i in range(len(grResponse['result'])):
+                if (grResponse['result'][i]['repeat']).lower() == 'true':
+                    if (grResponse['result'][i]['repeat_type']).lower() == 'never':
+                        if (grResponse['result'][i]['repeat_frequency']).lower() == 'day':
+                            datetime_str = grResponse['result'][i]['start_day_and_time']
+                            datetime_str = datetime_str.replace(",", "")
+                            datetime_object = datetime.strptime(datetime_str, '%m/%d/%Y %I:%M:%S %p').date()
+                            new_date = datetime_object
+                            while(new_date <= cur_date):
+                                if(new_date == cur_date):
+                                    listGR.append(grResponse['result'][i]['gr_unique_id'])
+                                new_date = new_date + timedelta(days=grResponse['result'][i]['repeat_every'])
+                        # For never and week frequency
+                
+                        if (grResponse['result'][i]['repeat_frequency']).lower() == 'week':
+                            datetime_str = grResponse['result'][i]['start_day_and_time']
+                            datetime_str = datetime_str.replace(",", "")
+                            datetime_object = datetime.strptime(datetime_str, '%m/%d/%Y %I:%M:%S %p').date()
+                            start_week = datetime_object.isocalendar()[1]
+                            new_week = start_week
+                            new_date = datetime_object
+                            while(new_date <= cur_date):
+                                if (new_week - start_week) == int(grResponse['result'][i]['repeat_every']):
+                                    start_week = new_week
+                                    if (new_week == cur_week):
+                                        listGR.append(grResponse['result'][i]['gr_unique_id'])
+                                new_date = new_date + timedelta(weeks=grResponse['result'][i]['repeat_every'])
+                                new_week = new_date.isocalendar()[1]
+
+                        # For never and month frequency
+                        if (grResponse['result'][i]['repeat_frequency']).lower() == 'month':
+                            datetime_str = grResponse['result'][i]['start_day_and_time']
+                            datetime_str = datetime_str.replace(",", "")
+                            datetime_object = datetime.strptime(datetime_str, '%m/%d/%Y %I:%M:%S %p').date()
+                            start_month = datetime_object.month
+                            new_month = start_month
+                            new_date = datetime_object
+                            while(new_date <= cur_date):
+                                if (new_month - start_month) == int(grResponse['result'][i]['repeat_every']):
+                                    start_month = new_month
+                                    if new_date == cur_date:
+                                        listGR.append(grResponse['result'][i]['gr_unique_id'])
+                                new_date = new_date + relativedelta(months=int(grResponse['result'][i]['repeat_every']))
+                                new_month = new_date.month
+                            
+                        # For never and year frequency
+                        if (grResponse['result'][i]['repeat_frequency']).lower() == 'year':
+                            datetime_str = grResponse['result'][i]['start_day_and_time']
+                            datetime_str = datetime_str.replace(",", "")
+                            datetime_object = datetime.strptime(datetime_str, '%m/%d/%Y %I:%M:%S %p').date()
+                            start_year = datetime_object.year
+                            new_year = start_year
+                            new_date = datetime_object
+                            while(new_date <= cur_date):
+                                if (new_year - start_year) == int(grResponse['result'][i]['repeat_every']):
+                                    start_year = new_year
+                                    if cur_date == new_date:
+                                        listGR.append(grResponse['result'][i]['gr_unique_id'])
+                                new_date = new_date + relativedelta(years=grResponse['result'][i]['repeat_every'])
+                                new_year = new_date.year
+                            print(listGR)
+
+                    # For after and day frequency
+                    if (grResponse['result'][i]['repeat_type']).lower() == 'after':
+
+                        if (grResponse['result'][i]['repeat_frequency']).lower() == 'day':
+                            datetime_str = grResponse['result'][i]['start_day_and_time']
+                            datetime_str = datetime_str.replace(",", "")
+                            datetime_object = datetime.strptime(datetime_str, '%m/%d/%Y %I:%M:%S %p').date()
+                            new_date = datetime_object
+                            occurence = 1
+                            while new_date <= cur_date and occurence <= int(grResponse['result'][i]['repeat_occurences']):
+                                if(new_date == cur_date):
+                                    listGR.append(grResponse['result'][i]['gr_unique_id'])
+                                new_date = new_date + timedelta(days=grResponse['result'][i]['repeat_every'])
+                                occurence += 1
+
+                        # # For after and week frequency
+                        # if (grResponse['result'][i]['repeat_frequency']).lower() == 'week':
+
+                        #     datetime_str = grResponse['result'][i]['start_day_and_time']
+                        #     datetime_str = datetime_str.replace(",", "")
+                        #     datetime_object = datetime.strptime(datetime_str, '%m/%d/%Y %I:%M:%S %p').date()
+                        #     start_week = datetime_object.isocalendar()[1]
+                        #     new_week = start_week
+                        #     new_date = datetime_object
+                        #     occurence = 1
+                        #     while new_date <= cur_date and occurence <= int(grResponse['result'][i]['repeat_occurences']):
+                        #         if (new_week - start_week) == int(grResponse5['result'][i]['repeat_every']):
+                        #             start_week = new_week
+                        #             occurence += 1
+                        #             if (new_week == cur_week):
+                        #                 listGR.append(grResponse['result'][i]['gr_unique_id'])
+                        #         new_date = new_date + timedelta(weeks=grResponse['result'][i]['repeat_every'])
+                        #         new_week = new_date.isocalendar()[1]
+
+                        # For after and month frequency
+                        if (grResponse['result'][i]['repeat_frequency']).lower() == 'month':
+                            datetime_str = grResponse['result'][i]['start_day_and_time']
+                            datetime_str = datetime_str.replace(",", "")
+                            datetime_object = datetime.strptime(datetime_str, '%m/%d/%Y %I:%M:%S %p').date()
+                            start_month = datetime_object.month
+                            new_month = start_week
+                            new_date = datetime_object
+                            occurence = 1
+                            while new_date <= cur_date and occurence <= int(grResponse['result'][i]['repeat_occurences']):
+                                if (new_month - start_month) == int(grResponse['result'][i]['repeat_every']):
+                                    start_month = new_month
+                                    occurence += 1
+                                    if new_date == cur_date:
+                                        listGR.append(grResponse['result'][i]['gr_unique_id'])
+                                new_date = new_date + relativedelta(months=grResponse['result'][i]['repeat_every'])
+                                new_month = new_date.month
+
+                        # For after and year frequency
+                        if (grResponse['result'][i]['repeat_frequency']).lower() == 'year':
+
+                            datetime_str = grResponse['result'][i]['start_day_and_time']
+                            datetime_str = datetime_str.replace(",", "")
+                            datetime_object = datetime.strptime(datetime_str, '%m/%d/%Y %I:%M:%S %p').date()
+                            start_year = datetime_object.year
+                            new_year = start_year
+                            new_date = datetime_object
+                            occurence = 1
+                            while(new_date <= cur_date) and occurence <= int(grResponse['result'][i]['repeat_occurences']):
+                                if (new_year - start_year) == int(grResponse['result'][i]['repeat_every']):
+                                    start_year = new_year
+                                    occurence += 1
+                                    if new_date == cur_date:
+                                        listGR.append(grResponse['result'][i]['gr_unique_id'])
+                                new_date = new_date + relativedelta(years=grResponse['result'][i]['repeat_every'])
+                                new_year = new_date.year
+                            
+                    if (grResponse['result'][i]['repeat_type']).lower() == 'on':
+                        # For on and day frequency
+                        if (grResponse['result'][i]['repeat_frequency']).lower() == 'day':                
+                            datetime_str = grResponse['result'][i]['start_day_and_time']
+                            datetime_str = datetime_str.replace(",", "")
+                            datetime_object = datetime.strptime(datetime_str, '%m/%d/%Y %I:%M:%S %p').date()
+                            end_datetime = grResponse['result'][i]['repeat_ends_on']
+                            end_datetime = end_datetime.replace(" GMT-0700 (Pacific Daylight Time)", "")
+                            end_datetime_object = datetime.strptime(end_datetime, "%a %b %d %Y %H:%M:%S").date()
+                            new_date = datetime_object
+                        
+                            while(new_date <= cur_date and cur_date <= end_datetime_object):
+                                if(new_date == cur_date):
+                                    listGR.append(grResponse['result'][i]['gr_unique_id'])
+                                new_date = new_date + timedelta(days=grResponse['result'][i]['repeat_every'])
+
+                        # For on and week frequency
+                        if (grResponse['result'][i]['repeat_frequency']).lower() == 'week':
+
+                            datetime_str = grResponse['result'][i]['start_day_and_time']
+                            datetime_str = datetime_str.replace(",", "")
+                            datetime_object = datetime.strptime(datetime_str, '%m/%d/%Y %I:%M:%S %p').date()
+                            end_datetime = grResponse['result'][i]['repeat_ends_on']
+                            end_datetime = end_datetime.replace(" GMT-0700 (Pacific Daylight Time)", "")
+                            end_datetime_object = datetime.strptime(end_datetime, "%a %b %d %Y %H:%M:%S").date()
+                            start_week = datetime_object.isocalendar()[1]
+                            new_week = start_week
+                            new_date = datetime_object
+                            occurence = 1
+                            while(new_date <= cur_date and cur_date <= end_datetime_object):
+                                if (new_week - start_week) == int(grResponse['result'][i]['repeat_every']):
+                                    start_week = new_week
+                                    occurence += 1
+                                    if (new_week == cur_week):
+                                        listGR.append(grResponse['result'][i]['gr_unique_id'])
+                                new_date = new_date + timedelta(weeks=grResponse['result'][i]['repeat_every'])
+                                new_week = new_date.isocalendar()[1]
+
+                        # For on and month frequency
+
+                        if (grResponse['result'][i]['repeat_frequency']).lower() == 'month':
+
+                            datetime_str = grResponse['result'][i]['start_day_and_time']
+                            datetime_str = datetime_str.replace(",", "")
+                            datetime_object = datetime.strptime(datetime_str, '%m/%d/%Y %I:%M:%S %p').date()
+                            end_datetime = grResponse['result'][i]['repeat_ends_on']
+                            end_datetime = end_datetime.replace(" GMT-0700 (Pacific Daylight Time)", "")
+                            end_datetime_object = datetime.strptime(end_datetime, "%a %b %d %Y %H:%M:%S").date()
+                            start_month = datetime_object.month
+                            new_month = start_week
+                            new_date = datetime_object
+                            while(new_date <= cur_date and cur_date <= end_datetime):
+                                if (new_month - start_month) == int(grResponse['result'][i]['repeat_every']):
+                                    start_month = new_month
+                                    if new_date == cur_date:
+                                        listGR.append(grResponse['result'][i]['gr_unique_id'])
+                                new_date = new_date + relativedelta(months=grResponse['result'][i]['repeat_every'])
+                                new_month = new_date.month
+
+                        # For on and year frequency
+
+                        if (grResponse['result'][i]['repeat_frequency']).lower() == 'year':
+
+                            datetime_str = grResponse['result'][i]['start_day_and_time']
+                            datetime_str = datetime_str.replace(",", "")
+                            datetime_object = datetime.strptime(datetime_str, '%m/%d/%Y %I:%M:%S %p').date()
+                            end_datetime = grResponse['result'][i]['repeat_ends_on']
+                            end_datetime = end_datetime.replace(" GMT-0700 (Pacific Daylight Time)", "")
+                            end_datetime_object = datetime.strptime(end_datetime, "%a %b %d %Y %H:%M:%S").date()
+                            start_year = datetime_object.year
+                            new_year = start_year
+                            new_date = datetime_object
+                            while(new_date <= cur_date and cur_date <= end_datetime_object):
+                                if (new_year - start_year) == int(grResponse['result'][i]['repeat_every']):
+                                    start_year = new_year
+                                    if cur_date == new_date:
+                                        listGR.append(grResponse['result'][i]['gr_unique_id'])
+                                new_date = new_date + relativedelta(years=grResponse['result'][i]['repeat_every'])
+                                new_year = new_date.year
+
+                else:
+                    datetime_str = grResponse['result'][i]['start_day_and_time']
+                    print(grResponse['result'][i])
+                    datetime_str = datetime_str.replace(",", "")
+                    datetime_object = datetime.strptime(datetime_str, '%m/%d/%Y %I:%M:%S %p').date()
+                    print(datetime_object)
+                    if(datetime_object == cur_date):
+                            listGR.append(grResponse['result'][i]['gr_unique_id'])
+
+            i  = len(query) - 1
+            
+            for id_gr in listGR:
+                
+                query.append("""SELECT * FROM goals_routines WHERE gr_unique_id = \'""" + id_gr + """\';""")
+                i += 1
+                new_item = (execute(query[i], 'get', conn))['result']
+                    
+                items.update({id_gr:new_item})
+                    
+            response['result'] = items
+            return response, 200
+        except:
+            raise BadRequest('Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
 
 # Add new people
 class CreateNewPeople(Resource):
@@ -4463,20 +4799,30 @@ class ChangeHistory(Resource):
                 date_affected = date_affected.date()
 
             print(date_affected)
-            goals = execute("""SELECT gr_unique_id, gr_title, is_complete, is_in_progress FROM goals_routines WHERE user_id = \'""" +user_id+ """\';""", 'get', conn)
-            
+
+            currentDate = (dt.datetime.now().date())
+            current_week_day = currentDate.strftime('%A').lower()
+            goals = execute("""SELECT * FROM goals_routines WHERE user_id = \'""" +user_id+ """\';""", 'get', conn)
+
             user_history = {}
             
             if len(goals['result']) > 0:
                 for i in range(len(goals['result'])):
-                    user_history[goals['result'][i]['gr_unique_id']] = {'title': goals['result'][i]['gr_title'], 'is_complete': goals['result'][i]['is_complete'], 'is_in_progress': goals['result'][i]['is_in_progress']}
-                    
-                    actions = execute("""SELECT at_unique_id, at_title, is_complete, is_in_progress FROM actions_tasks 
-                                        WHERE goal_routine_id = \'""" +goals['result'][i]['gr_unique_id']+ """\';""", 'get', conn)
-                    
-                    if len(actions['result']) > 0:
-                        for i in range(len(actions['result'])):
-                            user_history[actions['result'][i]['at_unique_id']] = {'title': actions['result'][i]['at_title'],'is_complete': actions['result'][i]['is_complete'], 'is_in_progress': actions['result'][i]['is_in_progress']}
+                    if goals['result'][i]['is_displayed_today'].lower() == 'true':
+                        user_history[goals['result'][i]['gr_unique_id']] = {'title': goals['result'][i]['gr_title'], 'is_complete': goals['result'][i]['is_complete'], 'is_in_progress': goals['result'][i]['is_in_progress']}
+                        
+                        actions = execute("""SELECT at_unique_id, at_title, is_complete, is_in_progress FROM actions_tasks 
+                                            WHERE goal_routine_id = \'""" +goals['result'][i]['gr_unique_id']+ """\';""", 'get', conn)
+                        
+                        if len(actions['result']) > 0:
+                            for i in range(len(actions['result'])):
+                                user_history[actions['result'][i]['at_unique_id']] = {'title': actions['result'][i]['at_title'],'is_complete': actions['result'][i]['is_complete'], 'is_in_progress': actions['result'][i]['is_in_progress']}
+
+                    execute("""UPDATE notifications
+                        SET before_is_set = \'""" +'False'+"""\'
+                        , during_is_set = \'""" +'False'+"""\'
+                        , after_is_set = \'""" +'False'+"""\' 
+                        WHERE gr_at_id = \'""" +goals['result'][i]['gr_unique_id']+"""\'""", 'post', conn)
 
             execute("""INSERT INTO history                        
                         (id
@@ -4493,12 +4839,414 @@ class ChangeHistory(Resource):
                         ,\'""" +str(date_affected)+ """\');
                         """, 'post', conn)
 
-            if len(goals['result']) > 0:
-                for i in range(len(goals['result'])):
+            for goal in goals['result']:
+                is_displayed_today = 'False'
+                datetime_str = goal['start_day_and_time']
+                datetime_str = datetime_str.replace(",", "")
+                start_date = datetime.strptime(datetime_str, '%m/%d/%Y %I:%M:%S %p').date()
+                repeat_week_days = json.loads(goal['repeat_week_days'])
+                repeat_ends_on = (datetime.min).date()
+               
+                week_days_unsorted = []
+                occurence_dates = []
+
+                for key in repeat_week_days.keys():
+                    if repeat_week_days[key].lower() == 'true':
+                        if key.lower() == "monday":
+                            week_days_unsorted.append(1)
+                        if key.lower() == "tuesday":
+                            week_days_unsorted.append(2)
+                        if key.lower() == "wednesday":
+                            week_days_unsorted.append(3)
+                        if key.lower() == "thursday":
+                            week_days_unsorted.append(4)
+                        if key.lower() == "friday":
+                            week_days_unsorted.append(5)
+                        if key.lower() == "saturday":
+                            week_days_unsorted.append(6)
+                        if key.lower() == "sunday":
+                            week_days_unsorted.append(7)
+                week_days = sorted(week_days_unsorted)
+
+                if current_week_day == "monday":
+                    current_week_day = 1
+                if current_week_day == "tuesday":
+                    current_week_day = 2
+                if current_week_day == "wednesday":
+                    current_week_day = 3
+                if current_week_day == "thursday":
+                    current_week_day = 4
+                if current_week_day == "friday":
+                    current_week_day = 5
+                if current_week_day == "saturday":
+                    current_week_day = 6
+                if current_week_day == "sunday":
+                    current_week_day = 7
+
+                if goal['repeat'].lower() == 'false':
+                    epoch = dt.datetime.utcfromtimestamp(0).date()
+                    current_time = (currentDate - epoch).total_seconds() * 1000.0
+                    start_time = (start_date - epoch).total_seconds() * 1000.0
+                    is_displayed_today = (current_time - start_time) == 0
+                    print(goal['gr_title'],is_displayed_today)
                     execute("""UPDATE goals_routines
                                 SET is_in_progress = \'""" +'False'+"""\'
                                 , is_complete = \'""" +'False'+"""\'
-                                WHERE gr_unique_id = \'"""+goals['result'][i]['gr_unique_id']+"""\';""", 'post', conn)
+                                , is_displayed_today = \'""" +str(is_displayed_today).title()+"""\'
+                                WHERE gr_unique_id = \'"""+goal['gr_unique_id']+"""\';""", 'post', conn)
+
+                else:
+                    if currentDate >= start_date:
+
+                        if goal['repeat_type'].lower() == 'after':
+                            if goal['repeat_frequency'].lower() == 'day':
+                                print("day")
+                                repeat_occurences = goal['repeat_occurences'] -1
+                                repeat_every = goal['repeat_every']
+                                number_days = int(repeat_occurences) * int(repeat_every)
+                                repeat_ends_on = start_date + timedelta(days=number_days)
+                                print(repeat_ends_on)
+                                
+                                
+                            elif goal['repeat_frequency'].lower() == 'week':
+                                numberOfWeek = 0
+
+                                init_date = start_date
+                                start_day = init_date.isoweekday()
+                                print("Weekly")
+                                result = []
+                                for x in week_days:
+                                    if x < start_day:
+                                        result.append(x)
+                                new_week = []
+                                if len(result) > 0:
+                                    new_week = week_days[len(result):]
+                                    for day in result:
+                                        new_week.append(day)
+                                    week_days = new_week
+
+                                for i in range(goal['repeat_occurences']) : 
+                                    if i < len(week_days):
+                                        dow = week_days[i]
+                                    if i >= len(week_days):
+                                        numberOfWeek = math.floor(i / len(week_days))
+                                        dow = week_days[i % len(week_days)]
+
+                                    new_date = init_date
+                                    today  = new_date.isoweekday()
+                                    day_i_need = dow
+                                    if today <= day_i_need:
+                                        days = day_i_need - today
+                                        nextDayOfTheWeek = new_date + timedelta(days=days)
+                                    else:
+                                        new_date = new_date + relativedelta(weeks=1)
+                                        days = day_i_need - today
+                                        nextDayOfTheWeek = new_date + timedelta(days=-days)
+                                    add_weeks = numberOfWeek * int(goal['repeat_every'])
+                                    date = nextDayOfTheWeek + relativedelta(weeks=add_weeks)
+                                    occurence_dates.append(date)
+                                print("current", currentDate)
+                                print(occurence_dates)    
+                                if currentDate in occurence_dates:
+                                    is_displayed_today = True
+                                print(goal['gr_title'], is_displayed_today)
+                                print("P")
+                                execute("""UPDATE goals_routines
+                                SET is_in_progress = \'""" +'False'+"""\'
+                                , is_complete = \'""" +'False'+"""\'
+                                , is_displayed_today = \'""" +str(is_displayed_today).title()+"""\'
+                                WHERE gr_unique_id = \'"""+goal['gr_unique_id']+"""\';""", 'post', conn)
+
+                            elif goal['repeat_frequency'].lower() == 'month':
+                                print("month")
+                                repeat_occurences = goal['repeat_occurences'] - 1
+                                repeat_every = goal['repeat_every']
+                                end_month = int(repeat_occurences) * int(repeat_every)
+                                repeat_ends_on = start_date + relativedelta(months=end_month)
+                                print(repeat_ends_on)
+
+                            elif goal['repeat_frequency'].lower() == 'year':
+                                print("year")
+                                repeat_occurences = goal['repeat_occurences']
+                                repeat_every = goal['repeat_every']
+                                end_year = int(repeat_occurences) * int(repeat_every)
+                                repeat_ends_on = start_date + relativedelta(years=end_year)
+                                print(repeat_ends_on)
+
+                        elif goal['repeat_type'].lower() == 'never':
+                            print("never")
+                            repeat_ends_on = currentDate
+                            print(goal['gr_title'], repeat_ends_on)
+                        
+                        elif goal['repeat_type'].lower() == 'on':
+                            repeat_ends = goal['repeat_ends_on']
+                            repeat_ends_on = repeat_ends[:24]
+                            repeat_ends_on = datetime.strptime(repeat_ends_on, "%a %b %d %Y %H:%M:%S").date()
+
+                    if currentDate <= repeat_ends_on:
+                        repeat_every = int(goal['repeat_every'])
+
+                        if goal['repeat_frequency'].lower() == 'day':
+                            epoch = dt.datetime.utcfromtimestamp(0).date()
+                            current_time = (currentDate - epoch).total_seconds() * 1000.0
+                            start_time = (start_date - epoch).total_seconds() * 1000.0
+                            is_displayed_today = (math.floor((current_time - start_time)/(24*36*1000)) % repeat_every) == 0
+                            print(is_displayed_today)
+                            execute("""UPDATE goals_routines
+                                SET is_in_progress = \'""" +'False'+"""\'
+                                , is_complete = \'""" +'False'+"""\'
+                                , is_displayed_today = \'""" +str(is_displayed_today).title()+"""\'
+                                WHERE gr_unique_id = \'"""+goal['gr_unique_id']+"""\';""", 'post', conn)
+
+                            print(goal['gr_title'], is_displayed_today)
+
+                        if goal['repeat_frequency'].lower() == 'week':
+                            if current_week_day in week_days:
+                                epoch = dt.datetime.utcfromtimestamp(0).date()
+                                current_time = (currentDate - epoch).total_seconds() * 1000.0
+                                start_time = (start_date - epoch).total_seconds() * 1000.0
+                                is_displayed_today = (math.floor((current_time - start_time)/(7*24*3600*1000)) % repeat_every) == 0
+                            execute("""UPDATE goals_routines
+                                        SET is_in_progress = \'""" +'False'+"""\'
+                                        , is_complete = \'""" +'False'+"""\'
+                                        , is_displayed_today = \'""" +str(is_displayed_today).title()+"""\'
+                                        WHERE gr_unique_id = \'"""+goal['gr_unique_id']+"""\';""", 'post', conn)
+                            print(goal['gr_title'] , is_displayed_today)
+
+                        if goal['repeat_frequency'].lower() == 'month':
+                            is_displayed_today= currentDate.day == start_date.day and ((currentDate.year - start_date.year) * 12 + currentDate.month - start_date.month) % repeat_every == 0
+                            execute("""UPDATE goals_routines
+                                SET is_in_progress = \'""" +'False'+"""\'
+                                , is_complete = \'""" +'False'+"""\'
+                                , is_displayed_today = \'""" +str(is_displayed_today).title()+"""\'
+                                WHERE gr_unique_id = \'"""+goal['gr_unique_id']+"""\';""", 'post', conn)
+                            print(goal['gr_title'], is_displayed_today)
+
+                        if goal['repeat_frequency'].lower() == 'year':
+                            is_displayed_today= currentDate.day == start_date.day and currentDate.month == start_date.month and (currentDate.year - start_date.year) % repeat_every == 0
+                            execute("""UPDATE goals_routines
+                                SET is_in_progress = \'""" +'False'+"""\'
+                                , is_complete = \'""" +'False'+"""\'
+                                , is_displayed_today = \'""" +str(is_displayed_today).title()+"""\'
+                                WHERE gr_unique_id = \'"""+goal['gr_unique_id']+"""\';""", 'post', conn)
+                            print(goal['gr_title'], is_displayed_today)
+
+            
+            # user_history = {}
+            
+            # if len(goals['result']) > 0:
+            #     for i in range(len(goals['result'])):
+            #         user_history[goals['result'][i]['gr_unique_id']] = {'title': goals['result'][i]['gr_title'], 'is_complete': goals['result'][i]['is_complete'], 'is_in_progress': goals['result'][i]['is_in_progress']}
+                    
+            #         actions = execute("""SELECT at_unique_id, at_title, is_complete, is_in_progress FROM actions_tasks 
+            #                             WHERE goal_routine_id = \'""" +goals['result'][i]['gr_unique_id']+ """\';""", 'get', conn)
+                    
+            #         if len(actions['result']) > 0:
+            #             for i in range(len(actions['result'])):
+            #                 user_history[actions['result'][i]['at_unique_id']] = {'title': actions['result'][i]['at_title'],'is_complete': actions['result'][i]['is_complete'], 'is_in_progress': actions['result'][i]['is_in_progress']}
+
+            # execute("""INSERT INTO history                        
+            #             (id
+            #             , user_id
+            #             , date
+            #             , details
+            #             , date_affected)
+            #             VALUES
+            #             (
+            #              \'""" +NewID+ """\'
+            #             ,\'""" +user_id+ """\'
+            #             ,\'""" +date+ """\'
+            #             ,\'""" +str(json.dumps(user_history))+ """\'
+            #             ,\'""" +str(date_affected)+ """\');
+            #             """, 'post', conn)
+
+            # # if len(goals['result']) > 0:
+            # #     for i in range(len(goals['result'])):
+            # #         execute("""UPDATE goals_routines
+            # #                     SET is_in_progress = \'""" +'False'+"""\'
+            # #                     , is_complete = \'""" +'False'+"""\'
+            # #                     WHERE gr_unique_id = \'"""+goals['result'][i]['gr_unique_id']+"""\';""", 'post', conn)
+
+            response['message'] = 'successful'
+            
+            return response, 200
+        except:
+            raise BadRequest('Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
+class Calender(Resource):
+    def get(self, user_id):
+        response = {}
+        try:
+            conn = connect()
+
+            currentDate = (dt.datetime.now().date())
+            current_week_day = currentDate.strftime('%A').lower()
+
+            goals = execute("""SELECT * FROM goals_routines WHERE user_id = \'""" +user_id+ """\';""", 'get', conn)
+
+            for goal in goals['result']:
+                is_displayed_today = 'False'
+                datetime_str = goal['start_day_and_time']
+                datetime_str = datetime_str.replace(",", "")
+                start_date = datetime.strptime(datetime_str, '%m/%d/%Y %I:%M:%S %p').date()
+                repeat_week_days = json.loads(goal['repeat_week_days'])
+                repeat_ends_on = (datetime.min).date()
+               
+                week_days_unsorted = []
+                occurence_dates = []
+
+                for key in repeat_week_days.keys():
+                    if repeat_week_days[key].lower() == 'true':
+                        if key.lower() == "monday":
+                            week_days_unsorted.append(1)
+                        if key.lower() == "tuesday":
+                            week_days_unsorted.append(2)
+                        if key.lower() == "wednesday":
+                            week_days_unsorted.append(3)
+                        if key.lower() == "thursday":
+                            week_days_unsorted.append(4)
+                        if key.lower() == "friday":
+                            week_days_unsorted.append(5)
+                        if key.lower() == "saturday":
+                            week_days_unsorted.append(6)
+                        if key.lower() == "sunday":
+                            week_days_unsorted.append(7)
+                week_days = sorted(week_days_unsorted)
+
+                if current_week_day == "monday":
+                    current_week_day = 1
+                if current_week_day == "tuesday":
+                    current_week_day = 2
+                if current_week_day == "wednesday":
+                    current_week_day = 3
+                if current_week_day == "thursday":
+                    current_week_day = 4
+                if current_week_day == "friday":
+                    current_week_day = 5
+                if current_week_day == "saturday":
+                    current_week_day = 6
+                if current_week_day == "sunday":
+                    current_week_day = 7
+                if goal['repeat'].lower() == 'false':
+                    epoch = dt.datetime.utcfromtimestamp(0).date()
+                    current_time = (currentDate - epoch).total_seconds() * 1000.0
+                    start_time = (start_date - epoch).total_seconds() * 1000.0
+                    is_displayed_today = (current_time - start_time) == 0
+                    print(goal['gr_title'],is_displayed_today)
+
+                else:
+                    if currentDate >= start_date:
+                        if goal['repeat_type'].lower() == 'after':
+                            if goal['repeat_frequency'].lower() == 'day':
+                                print("day")
+                                repeat_occurences = goal['repeat_occurences'] -1
+                                repeat_every = goal['repeat_every']
+                                number_days = int(repeat_occurences) * int(repeat_every)
+                                repeat_ends_on = start_date + timedelta(days=number_days)
+                                print(repeat_ends_on)
+                                
+                            elif goal['repeat_frequency'].lower() == 'week':
+                                numberOfWeek = 0
+
+                                init_date = start_date
+                                start_day = init_date.isoweekday()
+                                print("Weekly")
+                                result = []
+                                for x in week_days:
+                                    if x < start_day:
+                                        result.append(x)
+                                new_week = []
+                                if len(result) > 0:
+                                    new_week = week_days[len(result):]
+                                    for day in result:
+                                        new_week.append(day)
+                                    week_days = new_week
+
+                                for i in range(goal['repeat_occurences']) : 
+                                    if i < len(week_days):
+                                        dow = week_days[i]
+                                    if i >= len(week_days):
+                                        numberOfWeek = math.floor(i / len(week_days))
+                                        dow = week_days[i % len(week_days)]
+
+                                    new_date = init_date
+                                    today  = new_date.isoweekday()
+                                    day_i_need = dow
+                                    if today <= day_i_need:
+                                        days = day_i_need - today
+                                        nextDayOfTheWeek = new_date + timedelta(days=days)
+                                    else:
+                                        new_date = new_date + relativedelta(weeks=1)
+                                        days = day_i_need - today
+                                        nextDayOfTheWeek = new_date + timedelta(days=-days)
+                                    add_weeks = numberOfWeek * int(goal['repeat_every'])
+                                    date = nextDayOfTheWeek + relativedelta(weeks=add_weeks)
+                                    occurence_dates.append(date)
+                                print("current", currentDate)
+                                print(occurence_dates)    
+                                if currentDate in occurence_dates:
+                                    is_displayed_today = True
+                                print(goal['gr_title'], is_displayed_today)
+
+                            elif goal['repeat_frequency'].lower() == 'month':
+                                print("month")
+                                repeat_occurences = goal['repeat_occurences'] - 1
+                                repeat_every = goal['repeat_every']
+                                end_month = int(repeat_occurences) * int(repeat_every)
+                                repeat_ends_on = start_date + relativedelta(months=end_month)
+                                print(repeat_ends_on)
+
+                            elif goal['repeat_frequency'].lower() == 'year':
+                                print("year")
+                                repeat_occurences = goal['repeat_occurences']
+                                repeat_every = goal['repeat_every']
+                                end_year = int(repeat_occurences) * int(repeat_every)
+                                repeat_ends_on = start_date + relativedelta(years=end_year)
+                                print(repeat_ends_on)
+
+                        elif goal['repeat_type'].lower() == 'never':
+                            print("never")
+                            repeat_ends_on = currentDate
+                            print(repeat_ends_on)
+                        
+                        elif goal['repeat_type'].lower() == 'on':
+                            repeat_ends = goal['repeat_ends_on']
+                            repeat_ends_on = repeat_ends[:24]
+                            repeat_ends_on = datetime.strptime(repeat_ends_on, "%a %b %d %Y %H:%M:%S").date()
+
+                    if currentDate <= repeat_ends_on:
+                        print("Pragya")
+                        repeat_every = int(goal['repeat_every'])
+
+                        if goal['repeat_frequency'].lower() == 'day':
+                           
+                            epoch = dt.datetime.utcfromtimestamp(0).date()
+                            current_time = (currentDate - epoch).total_seconds() * 1000.0
+                            start_time = (start_date - epoch).total_seconds() * 1000.0
+                            is_displayed_today = (math.floor((current_time - start_time)/(24*3600*1000)) % repeat_every) == 0
+                            print(goal['gr_title'], is_displayed_today)
+
+                        if goal['repeat_frequency'].lower() == 'week':
+                            print(current_week_day)
+                            if current_week_day in week_days:
+                                print(current_week_day)
+                                epoch = dt.datetime.utcfromtimestamp(0).date()
+                                current_time = (currentDate - epoch).total_seconds() * 1000.0
+                                start_time = (start_date - epoch).total_seconds() * 1000.0
+                                is_displayed_today = (math.floor((current_time - start_time)/(7*24*3600*1000)) % repeat_every) == 0
+                    
+                            print(goal['gr_title'] , is_displayed_today)
+
+                        if goal['repeat_frequency'].lower() == 'month':
+                            is_displayed_today= currentDate.day == start_date.day and ((currentDate.year - start_date.year) * 12 + currentDate.month - start_date.month) % repeat_every == 0
+                            print(goal['gr_title'], is_displayed_today)
+
+                        if goal['repeat_frequency'].lower() == 'year':
+                            is_displayed_today= currentDate.day == start_date.day and currentDate.month == start_date.month and (currentDate.year - start_date.year) % repeat_every == 0
+                            print(goal['gr_title'], is_displayed_today)
+
 
             response['message'] = 'successful'
             
@@ -4521,7 +5269,7 @@ api.add_resource(AboutMe, '/api/v2/aboutme', '/api/v2/aboutme/<string:user_id>')
 api.add_resource(ListAllTA, '/api/v2/listAllTA', '/api/v2/listAllTA/<string:user_id>') #working
 api.add_resource(ListAllPeople, '/api/v2/listPeople', '/api/v2/listPeople/<string:user_id>') #working
 api.add_resource(ActionsTasks, '/api/v2/actionsTasks/<string:goal_routine_id>') #working
-# api.add_resource(DailyView, '/api/v2/dailyView/<user_id>') #working
+api.add_resource(DailyView, '/api/v2/dailyView') #working
 # api.add_resource(WeeklyView, '/api/v2/weeklyView/<user_id>') #working
 # api.add_resource(MonthlyView, '/api/v2/monthlyView/<user_id>') #working
 api.add_resource(AllUsers, '/api/v2/usersOfTA/<string:email_id>') #working
@@ -4541,6 +5289,9 @@ api.add_resource(GetPeopleImages, '/api/v2/getPeopleImages/<string:ta_id>')
 api.add_resource(GetHistory, '/api/v2/getHistory/<string:user_id>')
 api.add_resource(GetUserAndTime, '/api/v2/getUserAndTime')
 api.add_resource(Notifications, '/api/v2/notifications')
+api.add_resource(TodayGR, '/api/v2/todayGR')
+api.add_resource(GetNotifications, '/api/v2/getNotifications', '/api/v2/getNotifications/<string:user_id>') # working
+api.add_resource(Calender, '/api/v2/calender/<string:user_id>') # working
 
 # POST requests
 api.add_resource(AnotherTAAccess, '/api/v2/anotherTAAccess') #working
