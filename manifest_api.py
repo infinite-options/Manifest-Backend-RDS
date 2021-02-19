@@ -283,11 +283,22 @@ class GAI(Resource):
             conn = connect()
             
             # Get all goals and routines of the user
-            query = """SELECT * FROM goals_routines WHERE user_id = \'""" +user_id+ """\' AND is_persistent = 'False';"""
+            query = """SELECT * FROM goals_routines WHERE user_id = \'""" +user_id+ """\' AND is_persistent = 'False' AND is_available = 'True' AND is_displayed_today = 'True';"""
 
             items = execute(query,'get', conn)
 
             goal_routine_response = items['result']
+            for goal in goal_routine_response:
+                time = []
+                time = goal['start_day_and_time'].split(',')
+                time[1] = time[1][1:]
+                time_goal = datetime.strptime(time[1], '%I:%M:%S %p')
+                goal['start_time'] = str(time_goal)
+            
+            goal_routine_response.sort(key = lambda x:x['start_time']) 
+
+            for goal in goal_routine_response:
+                del goal['start_time']
 
             # Get all notification details 
             for i in range(len(goal_routine_response)):
@@ -323,13 +334,24 @@ class RTS(Resource):
             conn = connect()
             
             # Get all goals and routines of the user
-            query = """SELECT * FROM goals_routines WHERE user_id = \'""" +user_id+ """\' AND is_persistent = 'True';"""
+            query = """SELECT * FROM goals_routines WHERE user_id = \'""" +user_id+ """\' AND is_persistent = 'True' AND is_available = 'True' AND is_displayed_today = 'True';"""
 
             items = execute(query,'get', conn)
 
             goal_routine_response = items['result']
 
-            # Get all notification details 
+            for routine in goal_routine_response:
+                time = []
+                time = routine['start_day_and_time'].split(',')
+                time[1] = time[1][1:]
+                time_goal = datetime.strptime(time[1], '%I:%M:%S %p')
+                routine['start_time'] = str(time_goal)
+            
+            goal_routine_response.sort(key = lambda x:x['start_time']) 
+
+            for routine in goal_routine_response:
+                del routine['start_time']
+
             for i in range(len(goal_routine_response)):
                 gr_id = goal_routine_response[i]['gr_unique_id']
                 res_actions = execute("""SELECT * FROM actions_tasks WHERE goal_routine_id = \'""" +gr_id+ """\';""", 'get', conn)
@@ -803,7 +825,7 @@ class ListAllPeople(Resource):
                         ON ta_people_id = ta_unique_id
                         JOIN users on user_uid = user_unique_id
                         WHERE user_uid = \'""" + user_id+  """\';"""
-            
+            print(query)
             items = execute(query,'get', conn)
 
             response['message'] = 'successful'
@@ -2486,11 +2508,21 @@ class ResetGR(Resource):
                         , is_complete = \'""" + 'False' + """\'
                         WHERE gr_unique_id = \'""" + gr_id + """\';""", 'post', conn)
 
+            actions = execute("""SELECT at_unique_id FROM actions_tasks WHERE goal_routine_id = \'""" + gr_id + """\';""", 'get', conn)
+
             execute(""" UPDATE actions_tasks
                         SET 
                         is_in_progress = \'""" + 'False' + """\'
                         , is_complete = \'""" + 'False' + """\'
                         WHERE goal_routine_id = \'""" + gr_id + """\';""", 'post', conn)
+
+            if len(actions['result']) > 0:
+                for i in range(len(actions['result'])):
+                    execute(""" UPDATE instructions_steps
+                            SET 
+                            is_in_progress = \'""" + 'False' + """\'
+                            , is_complete = \'""" + 'False' + """\'
+                            WHERE at_id = \'""" + actions['result'][i]['at_unique_id'] + """\';""", 'post', conn)
 
             response['message'] = 'successful'
 
@@ -3240,6 +3272,8 @@ class UpdateNameTimeZone(Resource):
                                 , day_start = \'""" + '00:00' + """\'
                                 , day_end = \'""" + '23:59' + """\'
                                 , new_account = \'""" + 'False' + """\'
+                                , message_card = \'""" + '' + """\'
+                                , message_day = \'""" + '' + """\'
                             WHERE user_unique_id = \'""" + user_unique_id + """\' ;""", 'post', conn)
 
             NewRelationIDresponse = execute("Call get_relation_id;", 'get', conn)
@@ -3510,6 +3544,7 @@ class UpdateATWatchMobile(Resource):
                 query = """UPDATE actions_tasks
                             SET  
                                 is_complete = \'""" + str(is_complete).title() + """\'
+                                , is_in_progress =  \'""" + str(is_in_progress).title() + """\'
                                 , datetime_completed =  \'""" + datetime_completed + """\'
                                 WHERE at_unique_id = \'""" +id+ """\';"""
                 execute(query, 'post', conn)
@@ -3518,6 +3553,7 @@ class UpdateATWatchMobile(Resource):
                 query = """UPDATE actions_tasks
                             SET  
                                 is_complete = \'""" + str(is_complete).title() + """\'
+                                , is_in_progress =  \'""" + str(is_in_progress).title() + """\'
                                 , datetime_started = \'""" + datetime_started + """\'
                                 WHERE at_unique_id = \'""" +id+ """\';"""
                 execute(query, 'post', conn)
@@ -3527,12 +3563,42 @@ class UpdateATWatchMobile(Resource):
                 query = """UPDATE actions_tasks
                             SET  
                                 is_complete = \'""" + str(is_complete).title() + """\'
+                                , is_in_progress =  \'""" + str(is_in_progress).title() + """\'
                                 , datetime_completed =  \'""" + datetime_completed + """\'
                                 , datetime_started = \'""" + datetime_started + """\'
                                 WHERE at_unique_id = \'""" +id+ """\';"""
                 execute(query, 'post', conn)
 
             response['message'] = 'Update action and task successful'
+
+            return response, 200
+        except:
+            raise BadRequest('Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
+class UpdateISWatchMobile(Resource):
+    def post(self):    
+        response = {}
+        items = {}
+
+        try:
+            conn = connect()
+            data = request.get_json(force=True)
+
+            id = data['id']
+            is_complete = data['is_complete']
+            is_in_progress = data['is_in_progress']
+
+            query = """UPDATE instructions_steps
+                        SET  
+                            is_complete = \'""" + str(is_complete).title() + """\'
+                            , is_in_progress =  \'""" + str(is_in_progress).title() + """\'
+                            WHERE unique_id = \'""" +id+ """\';"""
+
+            execute(query, 'post', conn)
+
+            response['message'] = 'Update instructions/steps successful'
 
             return response, 200
         except:
@@ -4016,6 +4082,175 @@ class GetUserAndTime(Resource):
             raise BadRequest('Request failed, please try again later.')
         finally:
             disconnect(conn)
+
+class Motivation(Resource):
+    def get(self, user_id):
+        response = {}
+        try:
+            conn = connect()
+
+            items = execute("""SELECT motivation FROM users WHERE user_unique_id = \'""" +user_id+ """\';""", 'get', conn)
+            print(type(items['result']))
+            response['message'] = 'successful'
+            response['result'] = items['result']
+            return response, 200
+        except:
+            raise BadRequest('Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
+class Happy(Resource):
+    def get(self, user_id):
+        response = {}
+        try:
+            conn = connect()
+
+            items = execute("""SELECT happy FROM users WHERE user_unique_id = \'""" +user_id+ """\';""", 'get', conn)
+            print(type(items['result']))
+            response['message'] = 'successful'
+            response['result'] = items['result']
+            return response, 200
+        except:
+            raise BadRequest('Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
+class Feelings(Resource):
+    def get(self, user_id):
+        response = {}
+        try:
+            conn = connect()
+
+            items = execute("""SELECT feelings FROM users WHERE user_unique_id = \'""" +user_id+ """\';""", 'get', conn)
+            print(type(items['result']))
+            response['message'] = 'successful'
+            response['result'] = items['result']
+            return response, 200
+        except:
+            raise BadRequest('Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
+class Important(Resource):
+    def get(self, user_id):
+        response = {}
+        try:
+            conn = connect()
+
+            items = execute("""SELECT what_is_important FROM users WHERE user_unique_id = \'""" +user_id+ """\';""", 'get', conn)
+            print(type(items['result']))
+            response['message'] = 'successful'
+            response['result'] = items['result']
+            return response, 200
+        except:
+            raise BadRequest('Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
+class AboutHistory(Resource):
+    def post(self):
+        response = {}
+        try:
+            conn = connect()
+
+            timestamp = getNow()
+            data = request.get_json(force=True)
+
+            category = data['category']
+            name = data['name']
+            user_id = data['user_id']
+
+            NewIDresponse = execute("CALL get_about_id;",  'get', conn)
+            new_id = NewIDresponse['result'][0]['new_id']
+            
+            items = execute("""INSERT into about_me_history
+                                (   about_history_id
+                                    , category
+                                    , name
+                                    , datetime_gmt
+                                    , user_id
+                                )
+                                VALUES
+                                (
+                                    \'""" +new_id+ """\'
+                                    , \'""" +category+ """\'
+                                    , \'""" +name+ """\'
+                                    , \'""" +timestamp+ """\'
+                                    , \'""" +user_id+ """\'
+                                );""", 'post', conn)
+
+            response['message'] = 'successful'
+            return response, 200
+        except:
+            raise BadRequest('Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
+class UserTADetails(Resource):
+    def get(self):
+        response = {}
+
+        try:
+            conn = connect()
+        
+            email_list = ((request.headers['Email'][1:-1]).replace('"', "")).split(',')
+            print(email_list)
+            items = []
+            ta_list = {}
+            user_list = []
+            res = []
+            ta_response = execute("""SELECT ta_unique_id, ta_email_id, ta_first_name, ta_last_name, ta_phone_number FROM ta_people;""", 'get', conn)
+            user_response = execute("""SELECT user_email_id, user_first_name, user_last_name, user_picture FROM users;""", 'get', conn)
+
+            for i in range(len(ta_response['result'])):
+                ta_list[ta_response['result'][i]['ta_email_id']] = ta_response['result'][i]['ta_unique_id']
+
+            for i in range(len(user_response['result'])):
+                user_list.append(user_response['result'][i]['user_email_id'])
+
+            for email in email_list:
+                if email[0] == " ":
+                    email = email[1:]
+                res = {}
+                if email in ta_list:
+                    relation_response = execute("""SELECT * FROM relationship WHERE ta_people_id = \'""" +ta_list[email]+ """\';""", 'get', conn)
+                    for k in range(len(relation_response['result'])):
+                        if relation_response['result'][k]['advisor'] == 1:
+                            for i in range(len(ta_response['result'])):
+                                if ta_response['result'][i]['ta_email_id'] == email:
+                                    res['email_id'] = email
+                                    res['first_name'] = ta_response['result'][i]['ta_first_name']
+                                    res['last_name'] = ta_response['result'][i]['ta_last_name']
+                                    res['phone_number'] = ta_response['result'][i]['ta_phone_number']
+                                    res['picture'] = relation_response['result'][k]['ta_picture']
+                                    res['role'] = 'advisor'
+                                    items.append(res)
+                            break
+                    
+                elif email in user_list and email not in ta_list:
+                    for i in range(len(user_response['result'])):
+                        if user_response['result'][i]['user_email_id'] == email:
+                            res['email_id'] = email
+                            res['first_name'] = user_response['result'][i]['user_first_name']
+                            res['last_name'] = user_response['result'][i]['user_last_name']
+                            res['picture'] = user_response['result'][k]['user_picture']
+                            res['role'] = 'user'
+                            items.append(res)
+                            
+
+                elif email not in ta_list and email not in user_list:
+                    res['email_id'] = email
+                    res['message'] = "Email ID doesn't exists"
+                    items.append(res)
+
+            response['message'] = 'successful'
+            response['result'] = items
+            return response, 200
+        except:
+            raise BadRequest('Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
 
 class Notifications(Resource):
     def get(self):
@@ -4697,6 +4932,11 @@ api.add_resource(Notifications, '/api/v2/notifications')
 api.add_resource(TodayGR, '/api/v2/todayGR')
 api.add_resource(GetNotifications, '/api/v2/getNotifications') # working
 api.add_resource(Calender, '/api/v2/calender/<string:user_id>') # working
+api.add_resource(Motivation, '/api/v2/motivation/<string:user_id>') # working
+api.add_resource(Happy, '/api/v2/happy/<string:user_id>') # working
+api.add_resource(Important, '/api/v2/important/<string:user_id>') # working
+api.add_resource(Feelings, '/api/v2/feelings/<string:user_id>') # working
+api.add_resource(UserTADetails, '/api/v2/userTADetails') # working
 
 # POST requests
 api.add_resource(AnotherTAAccess, '/api/v2/anotherTAAccess') #working
@@ -4722,6 +4962,8 @@ api.add_resource(UpdateNameTimeZone, '/api/v2/updateNewUser')
 api.add_resource(AddCoordinates, '/api/v2/addCoordinates')
 api.add_resource(UpdateGRWatchMobile, '/api/v2/udpateGRWatchMobile')
 api.add_resource(UpdateATWatchMobile, '/api/v2/updateATWatchMobile')
+api.add_resource(UpdateISWatchMobile, '/api/v2/updateISWatchMobile')
+
 api.add_resource(Login, '/api/v2/login')
 api.add_resource(UpdateAboutMe2, '/api/v2/update')
 api.add_resource(UploadIcons, '/api/v2/uploadIcons')
@@ -4730,6 +4972,8 @@ api.add_resource(ChangeHistory, '/api/v2/changeHistory/<string:user_id>')
 api.add_resource(ExistingUser, '/api/v2/existingUser')
 api.add_resource(ResetGR, '/api/v2/resetGR/<string:gr_id>')
 api.add_resource(update_guid_notification, '/api/v2/updateGuid/<string:action>')
+api.add_resource(AboutHistory, '/api/v2/changeAboutMeHistory')
+
 # api.add_resource(ChangeSublist, '/api/v2/changeSub/<string:user_id>')
 
 
