@@ -285,35 +285,41 @@ class GAI(Resource):
             items = execute(query,'get', conn)
 
             goal_routine_response = items['result']
-            for goal in goal_routine_response:
-                time = []
-                time = goal['start_day_and_time'].split(',')
-                time[1] = time[1][1:]
-                time_goal = datetime.strptime(time[1], '%I:%M:%S %p')
-                goal['start_time'] = str(time_goal)
+
+            if len(goal_routine_response) == 0:
+                response['message'] = 'No goals'
+                return response
             
-            goal_routine_response.sort(key = lambda x:x['start_time']) 
+            else:
+                for goal in goal_routine_response:
+                    time = []
+                    time = goal['start_day_and_time'].split(',')
+                    time[1] = time[1][1:]
+                    time_goal = datetime.strptime(time[1], '%I:%M:%S %p')
+                    goal['start_time'] = str(time_goal)
+                
+                goal_routine_response.sort(key = lambda x:x['start_time']) 
 
-            for goal in goal_routine_response:
-                del goal['start_time']
+                for goal in goal_routine_response:
+                    del goal['start_time']
 
-            # Get all notification details 
-            for i in range(len(goal_routine_response)):
-                gr_id = goal_routine_response[i]['gr_unique_id']
-                res_actions = execute("""SELECT * FROM actions_tasks WHERE goal_routine_id = \'""" +gr_id+ """\';""", 'get', conn)
-               
-                items['result'][i]['actions_tasks'] = list(res_actions['result'])
+                # Get all notification details 
+                for i in range(len(goal_routine_response)):
+                    gr_id = goal_routine_response[i]['gr_unique_id']
+                    res_actions = execute("""SELECT * FROM actions_tasks WHERE goal_routine_id = \'""" +gr_id+ """\';""", 'get', conn)
+                
+                    items['result'][i]['actions_tasks'] = list(res_actions['result'])
 
-                if len(res_actions['result']) > 0:
-                    action_response = res_actions['result']
-                    for j in range(len(action_response)):
-                        print(action_response[j]['at_unique_id'])
-                        res_ins = execute("""SELECT * FROM instructions_steps WHERE at_id = \'""" +action_response[j]['at_unique_id']+ """\';""", 'get', conn)
-                        print(res_ins)
-                        items['result'][i]['actions_tasks'][j]['instructions_steps'] = list(res_ins['result'])
+                    if len(res_actions['result']) > 0:
+                        action_response = res_actions['result']
+                        for j in range(len(action_response)):
+                            print(action_response[j]['at_unique_id'])
+                            res_ins = execute("""SELECT * FROM instructions_steps WHERE at_id = \'""" +action_response[j]['at_unique_id']+ """\' ORDER BY is_sequence;""", 'get', conn)
+                            print(res_ins)
+                            items['result'][i]['actions_tasks'][j]['instructions_steps'] = list(res_ins['result'])
 
-            response['message'] = 'successful'
-            response['result'] = items['result']
+                response['message'] = 'successful'
+                response['result'] = items['result']
 
             return response, 200
         except:
@@ -337,36 +343,41 @@ class RTS(Resource):
 
             goal_routine_response = items['result']
 
-            for routine in goal_routine_response:
-                time = []
-                time = routine['start_day_and_time'].split(',')
-                time[1] = time[1][1:]
-                time_goal = datetime.strptime(time[1], '%I:%M:%S %p')
-                routine['start_time'] = str(time_goal)
+            if len(goal_routine_response) == 0:
+                response['message'] = 'No Routines'
+                return response
             
-            goal_routine_response.sort(key = lambda x:x['start_time']) 
+            else:
+                for routine in goal_routine_response:
+                    time = []
+                    time = routine['start_day_and_time'].split(',')
+                    time[1] = time[1][1:]
+                    time_goal = datetime.strptime(time[1], '%I:%M:%S %p')
+                    routine['start_time'] = str(time_goal)
+                
+                goal_routine_response.sort(key = lambda x:x['start_time']) 
 
-            for routine in goal_routine_response:
-                del routine['start_time']
+                for routine in goal_routine_response:
+                    del routine['start_time']
 
-            for i in range(len(goal_routine_response)):
-                gr_id = goal_routine_response[i]['gr_unique_id']
-                res_actions = execute("""SELECT * FROM actions_tasks WHERE goal_routine_id = \'""" +gr_id+ """\';""", 'get', conn)
-               
-                items['result'][i]['actions_tasks'] = list(res_actions['result'])
+                for i in range(len(goal_routine_response)):
+                    gr_id = goal_routine_response[i]['gr_unique_id']
+                    res_actions = execute("""SELECT * FROM actions_tasks WHERE goal_routine_id = \'""" +gr_id+ """\';""", 'get', conn)
+                
+                    items['result'][i]['actions_tasks'] = list(res_actions['result'])
 
-                if len(res_actions['result']) > 0:
-                    action_response = res_actions['result']
-                    for j in range(len(action_response)):
-                        print(action_response[j]['at_unique_id'])
-                        res_ins = execute("""SELECT * FROM instructions_steps WHERE at_id = \'""" +action_response[j]['at_unique_id']+ """\';""", 'get', conn)
-                        print(res_ins)
-                        items['result'][i]['actions_tasks'][j]['instructions_steps'] = list(res_ins['result'])
+                    if len(res_actions['result']) > 0:
+                        action_response = res_actions['result']
+                        for j in range(len(action_response)):
+                            print(action_response[j]['at_unique_id'])
+                            res_ins = execute("""SELECT * FROM instructions_steps WHERE at_id = \'""" +action_response[j]['at_unique_id']+ """\' ORDER BY is_sequence;""", 'get', conn)
+                            print(res_ins)
+                            items['result'][i]['actions_tasks'][j]['instructions_steps'] = list(res_ins['result'])
 
-            response['message'] = 'successful'
-            response['result'] = items['result']
+                response['message'] = 'successful'
+                response['result'] = items['result']
 
-            return response, 200
+                return response, 200
         except:
             raise BadRequest('Get Routines Request failed, please try again later.')
         finally:
@@ -558,7 +569,7 @@ class InstructionsAndSteps(Resource):
 
             conn = connect()
         
-            query = """SELECT * FROM instructions_steps WHERE at_id = \'""" +action_task_id+ """\';"""
+            query = """SELECT * FROM instructions_steps WHERE at_id = \'""" +action_task_id+ """\' ORDER BY is_sequence;"""
             items = execute(query,'get', conn)
 
             response['result'] = items['result']
@@ -579,7 +590,18 @@ class AboutMe(Resource):
 
         try:
             conn = connect()
-           
+
+            progress = execute("""SELECT * FROM about_me_history WHERE user_id = \'""" +user_id+ """\'
+                                    ORDER BY about_history_id
+                                    LIMIT 1;""", 'get', conn)
+
+            progress_list = progress['result']
+
+            if len(progress_list) > 0:
+                first_date = progress_list[0]['datetime_gmt']
+            else:
+                first_date = ''
+
             # returns important people
             query = """ SELECT ta_people_id
                                 , ta_email_id
@@ -619,6 +641,8 @@ class AboutMe(Resource):
                                     , user_major_events
                                 FROM users
                             WHERE user_unique_id = \'""" +user_id+ """\';""", 'get', conn)
+
+            items['result'][0]['datetime'] = first_date
 
             # COmbining the data resulted form both queries
             if len(items1['result']) > 0:
@@ -1561,6 +1585,7 @@ class AddNewIS(Resource):
 
             at_id = request.form.get('at_id')
             is_timed = request.form.get('is_timed')
+            is_sequence = request.form.get('is_sequence')
             is_available = request.form.get('is_available')
             is_complete = request.form.get('is_complete')
             is_in_progress = request.form.get('is_in_progress')
@@ -1594,7 +1619,7 @@ class AddNewIS(Resource):
                             ( \'""" + NewISID + """\'
                             , \'""" + title + """\'
                             , \'""" + at_id + """\'
-                            , \'""" + '1' + """\'
+                            , \'""" + is_sequence + """\'
                             , \'""" + str(is_available).title() + """\'
                             , \'""" + str(is_complete).title() + """\'
                             , \'""" + str(is_in_progress).title() + """\'
@@ -1618,7 +1643,7 @@ class AddNewIS(Resource):
                             ( \'""" + NewISID + """\'
                             , \'""" + title + """\'
                             , \'""" + at_id + """\'
-                            , \'""" + '1' + """\'
+                            , \'""" + is_sequence + """\'
                             , \'""" + str(is_available).title() + """\'
                             , \'""" + str(is_complete).title() + """\'
                             , \'""" + str(is_in_progress).title() + """\'
@@ -1686,6 +1711,7 @@ class UpdateIS(Resource):
 
             is_id = request.form.get('unique_id')
             is_timed = request.form.get('is_timed')
+            is_sequence = request.form.get('is_sequence')
             is_available = request.form.get('is_available')
             is_complete = request.form.get('is_complete')
             is_in_progress = request.form.get('is_in_progress')
@@ -1706,6 +1732,7 @@ class UpdateIS(Resource):
                                 , is_available = \'""" + str(is_available).title() + """\'
                                 , is_complete = \'""" + str(is_complete).title() + """\'
                                 , is_in_progress = \'""" + str(is_in_progress).title() + """\'
+                                , is_sequence = \'""" + str(is_sequence) + """\'
                                 , photo = \'""" + photo_url + """\'
                                 , is_timed = \'""" + str(is_timed).title() + """\'
                                 , expected_completion_time = \'""" + str(expected_completion_time) + """\'
@@ -1719,6 +1746,7 @@ class UpdateIS(Resource):
                                 , is_available = \'""" + str(is_available).title() + """\'
                                 , is_complete = \'""" + str(is_complete).title() + """\'
                                 , is_in_progress = \'""" + str(is_in_progress).title() + """\'
+                                , is_sequence = \'""" + str(is_sequence) + """\'
                                 , photo = \'""" + is_picture + """\'
                                 , is_timed = \'""" + str(is_timed).title() + """\'
                                 , expected_completion_time = \'""" + str(expected_completion_time) + """\'
@@ -4164,8 +4192,11 @@ class ParticularGoalHistory(Resource):
             conn = connect()
             
             start_date = request.headers['start_date']
+            print(start_date)
             end_date = request.headers['end_date']
             gr_id = request.headers['goal_routine_id']
+
+            print(gr_id)
 
             items = execute("""SELECT * FROM history where user_id = \'""" +user_id+ """\';""", 'get', conn)
 
@@ -4178,11 +4209,10 @@ class ParticularGoalHistory(Resource):
                     res_p = 0
                     if items['result'][i]['details'][0] == '[':
                         details_json = json.loads(items['result'][i]['details'])
-
                         for k in range(len(details_json)):
                             if len(details_json[k]) > 0:
                                 if 'goal' in details_json[k] and 'status' in details_json[k] and gr_id == details_json[k]['goal']:
-                                    
+
                                     goal[res_p][details_json[k]['title']] = details_json[k]['status']
                                     if 'actions' in details_json[k]:
                                         action = {}
