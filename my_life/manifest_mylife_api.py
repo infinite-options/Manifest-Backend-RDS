@@ -289,37 +289,42 @@ class GAI(Resource):
             items = execute(query,'get', conn)
 
             goal_routine_response = items['result']
-            for goal in goal_routine_response:
-                time = []
-                time = goal['start_day_and_time'].split(',')
-                time[1] = time[1][1:]
-                time_goal = datetime.strptime(time[1], '%I:%M:%S %p')
-                goal['start_time'] = str(time_goal)
+            if len(goal_routine_response) == 0:
+                response['message'] = 'No goals'
+                return response
             
-            goal_routine_response.sort(key = lambda x:x['start_time']) 
+            else:
+                for goal in goal_routine_response:
+                    time = []
+                    time = goal['start_day_and_time'].split(',')
+                    time[1] = time[1][1:]
+                    time_goal = datetime.strptime(time[1], '%I:%M:%S %p')
+                    goal['start_time'] = str(time_goal)
+                
+                goal_routine_response.sort(key = lambda x:x['start_time']) 
 
-            for goal in goal_routine_response:
-                del goal['start_time']
+                for goal in goal_routine_response:
+                    del goal['start_time']
 
-            # Get all notification details 
-            for i in range(len(goal_routine_response)):
-                gr_id = goal_routine_response[i]['gr_unique_id']
-                res_actions = execute("""SELECT * FROM actions_tasks WHERE goal_routine_id = \'""" +gr_id+ """\';""", 'get', conn)
-               
-                items['result'][i]['actions_tasks'] = list(res_actions['result'])
+                # Get all notification details 
+                for i in range(len(goal_routine_response)):
+                    gr_id = goal_routine_response[i]['gr_unique_id']
+                    res_actions = execute("""SELECT * FROM actions_tasks WHERE goal_routine_id = \'""" +gr_id+ """\';""", 'get', conn)
+                
+                    items['result'][i]['actions_tasks'] = list(res_actions['result'])
 
-                if len(res_actions['result']) > 0:
-                    action_response = res_actions['result']
-                    for j in range(len(action_response)):
-                        print(action_response[j]['at_unique_id'])
-                        res_ins = execute("""SELECT * FROM instructions_steps WHERE at_id = \'""" +action_response[j]['at_unique_id']+ """\';""", 'get', conn)
-                        print(res_ins)
-                        items['result'][i]['actions_tasks'][j]['instructions_steps'] = list(res_ins['result'])
+                    if len(res_actions['result']) > 0:
+                        action_response = res_actions['result']
+                        for j in range(len(action_response)):
+                            print(action_response[j]['at_unique_id'])
+                            res_ins = execute("""SELECT * FROM instructions_steps WHERE at_id = \'""" +action_response[j]['at_unique_id']+ """\' ORDER BY is_sequence;""", 'get', conn)
+                            print(res_ins)
+                            items['result'][i]['actions_tasks'][j]['instructions_steps'] = list(res_ins['result'])
 
-            response['message'] = 'successful'
-            response['result'] = items['result']
+                response['message'] = 'successful'
+                response['result'] = items['result']
 
-            return response, 200
+                return response, 200
         except:
             raise BadRequest('Get Routines Request failed, please try again later.')
         finally:
@@ -341,31 +346,65 @@ class RTS(Resource):
 
             goal_routine_response = items['result']
 
-            for routine in goal_routine_response:
-                time = []
-                time = routine['start_day_and_time'].split(',')
-                time[1] = time[1][1:]
-                time_goal = datetime.strptime(time[1], '%I:%M:%S %p')
-                routine['start_time'] = str(time_goal)
+            if len(goal_routine_response) == 0:
+                response['message'] = 'No Routines'
+                return response
             
-            goal_routine_response.sort(key = lambda x:x['start_time']) 
+            else:
 
-            for routine in goal_routine_response:
-                del routine['start_time']
+                for routine in goal_routine_response:
+                    time = []
+                    time = routine['start_day_and_time'].split(',')
+                    time[1] = time[1][1:]
+                    time_goal = datetime.strptime(time[1], '%I:%M:%S %p')
+                    routine['start_time'] = str(time_goal)
+                
+                goal_routine_response.sort(key = lambda x:x['start_time']) 
 
-            for i in range(len(goal_routine_response)):
-                gr_id = goal_routine_response[i]['gr_unique_id']
-                res_actions = execute("""SELECT * FROM actions_tasks WHERE goal_routine_id = \'""" +gr_id+ """\';""", 'get', conn)
-               
-                items['result'][i]['actions_tasks'] = list(res_actions['result'])
+                for routine in goal_routine_response:
+                    del routine['start_time']
 
-                if len(res_actions['result']) > 0:
-                    action_response = res_actions['result']
-                    for j in range(len(action_response)):
-                        print(action_response[j]['at_unique_id'])
-                        res_ins = execute("""SELECT * FROM instructions_steps WHERE at_id = \'""" +action_response[j]['at_unique_id']+ """\';""", 'get', conn)
-                        print(res_ins)
-                        items['result'][i]['actions_tasks'][j]['instructions_steps'] = list(res_ins['result'])
+                for i in range(len(goal_routine_response)):
+                    gr_id = goal_routine_response[i]['gr_unique_id']
+                    res_actions = execute("""SELECT * FROM actions_tasks WHERE goal_routine_id = \'""" +gr_id+ """\';""", 'get', conn)
+                
+                    items['result'][i]['actions_tasks'] = list(res_actions['result'])
+
+                    if len(res_actions['result']) > 0:
+                        action_response = res_actions['result']
+                        for j in range(len(action_response)):
+                            print(action_response[j]['at_unique_id'])
+                            res_ins = execute("""SELECT * FROM instructions_steps WHERE at_id = \'""" +action_response[j]['at_unique_id']+ """\' ORDER BY is_sequence;""", 'get', conn)
+                            print(res_ins)
+                            items['result'][i]['actions_tasks'][j]['instructions_steps'] = list(res_ins['result'])
+
+                response['message'] = 'successful'
+                response['result'] = items['result']
+
+                return response, 200
+        except:
+            raise BadRequest('Get Routines Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
+# Returns Goals with actions/tasks and instructions/steps
+class ActionsInstructions(Resource):
+    def get(self, gr_id):
+        response = {}
+        items = {}
+        try:
+
+            conn = connect()
+            goals = execute("""SELECT * FROM goals_routines WHERE gr_unique_id = \'""" +gr_id+ """\';""", 'get', conn)
+            res_actions = execute("""SELECT * FROM actions_tasks WHERE goal_routine_id = \'""" +gr_id+ """\';""", 'get', conn)
+            items['result'] = goals['result']
+            items['result'][0]['actions_tasks'] = list(res_actions['result'])
+
+            if len(res_actions['result']) > 0:
+                action_response = res_actions['result']
+                for j in range(len(action_response)):
+                    res_ins = execute("""SELECT * FROM instructions_steps WHERE at_id = \'""" +action_response[j]['at_unique_id']+ """\';""", 'get', conn)
+                    items['result'][0]['actions_tasks'][j]['instructions_steps'] = list(res_ins['result'])
 
             response['message'] = 'successful'
             response['result'] = items['result']
@@ -375,7 +414,6 @@ class RTS(Resource):
             raise BadRequest('Get Routines Request failed, please try again later.')
         finally:
             disconnect(conn)
-
 
 
 # # Returns all Goals and Routines
@@ -433,7 +471,8 @@ class GetNotifications(Resource):
             # get all goals and routines
             query = """SELECT * FROM goals_routines where is_displayed_today = 'True'
                             and is_available = 'True'
-                            and is_complete = 'False';"""
+                            and is_complete = 'False'
+                            and (user_id='100-000045' or user_id='100-000040' or user_id='100-000048' or user_id='100-000052' or user_id='100-000055');"""
             items = execute(query,'get', conn)
             goal_routine_response = items['result']
 
@@ -536,7 +575,7 @@ class InstructionsAndSteps(Resource):
 
             conn = connect()
         
-            query = """SELECT * FROM instructions_steps WHERE at_id = \'""" +action_task_id+ """\';"""
+            query = """SELECT * FROM instructions_steps WHERE at_id = \'""" +action_task_id+ """\' ORDER BY is_sequence;"""
             items = execute(query,'get', conn)
 
             response['result'] = items['result']
@@ -557,6 +596,17 @@ class AboutMe(Resource):
 
         try:
             conn = connect()
+
+            progress = execute("""SELECT * FROM about_me_history WHERE user_id = \'""" +user_id+ """\'
+                                    ORDER BY about_history_id
+                                    LIMIT 1;""", 'get', conn)
+
+            progress_list = progress['result']
+
+            if len(progress_list) > 0:
+                first_date = progress_list[0]['datetime_gmt']
+            else:
+                first_date = ''
            
             # returns important people
             query = """ SELECT ta_people_id
@@ -591,9 +641,13 @@ class AboutMe(Resource):
                                     , day_end
                                     , day_start
                                     , time_zone
+                                    , user_phone_number
+                                    , user_birth_date
+                                    , user_history
+                                    , user_major_events
                                 FROM users
                             WHERE user_unique_id = \'""" +user_id+ """\';""", 'get', conn)
-
+            items['result'][0]['datetime'] = first_date
             # COmbining the data resulted form both queries
             if len(items1['result']) > 0:
                 response['result'] = items['result'] + items1['result']
@@ -1540,6 +1594,8 @@ class AddNewIS(Resource):
 
             at_id = request.form.get('at_id')
             is_timed = request.form.get('is_timed')
+            is_sequence = request.form.get('is_sequence')
+
             is_available = request.form.get('is_available')
             is_complete = request.form.get('is_complete')
             is_in_progress = request.form.get('is_in_progress')
@@ -1573,7 +1629,7 @@ class AddNewIS(Resource):
                             ( \'""" + NewISID + """\'
                             , \'""" + title + """\'
                             , \'""" + at_id + """\'
-                            , \'""" + '1' + """\'
+                            , \'""" + is_sequence + """\'
                             , \'""" + str(is_available).title() + """\'
                             , \'""" + str(is_complete).title() + """\'
                             , \'""" + str(is_in_progress).title() + """\'
@@ -1597,7 +1653,7 @@ class AddNewIS(Resource):
                             ( \'""" + NewISID + """\'
                             , \'""" + title + """\'
                             , \'""" + at_id + """\'
-                            , \'""" + '1' + """\'
+                            , \'""" + is_sequence + """\'
                             , \'""" + str(is_available).title() + """\'
                             , \'""" + str(is_complete).title() + """\'
                             , \'""" + str(is_in_progress).title() + """\'
@@ -1666,6 +1722,8 @@ class UpdateIS(Resource):
 
             is_id = request.form.get('unique_id')
             is_timed = request.form.get('is_timed')
+            is_sequence = request.form.get('is_sequence')
+
             is_available = request.form.get('is_available')
             is_complete = request.form.get('is_complete')
             is_in_progress = request.form.get('is_in_progress')
@@ -1686,6 +1744,7 @@ class UpdateIS(Resource):
                                 , is_available = \'""" + str(is_available).title() + """\'
                                 , is_complete = \'""" + str(is_complete).title() + """\'
                                 , is_in_progress = \'""" + str(is_in_progress).title() + """\'
+                                , is_sequence = \'""" + str(is_sequence) + """\'
                                 , photo = \'""" + photo_url + """\'
                                 , is_timed = \'""" + str(is_timed).title() + """\'
                                 , expected_completion_time = \'""" + str(expected_completion_time) + """\'
@@ -1699,6 +1758,7 @@ class UpdateIS(Resource):
                                 , is_available = \'""" + str(is_available).title() + """\'
                                 , is_complete = \'""" + str(is_complete).title() + """\'
                                 , is_in_progress = \'""" + str(is_in_progress).title() + """\'
+                                , is_sequence = \'""" + str(is_sequence) + """\'
                                 , photo = \'""" + is_picture + """\'
                                 , is_timed = \'""" + str(is_timed).title() + """\'
                                 , expected_completion_time = \'""" + str(expected_completion_time) + """\'
@@ -4177,6 +4237,98 @@ class GoalRoutineHistory(Resource):
 
                     if len(goal) > 0:
                         res[items['result'][i]['date_affected']] = goal
+            today_date = getToday()
+
+            goals = execute("""SELECT gr_unique_id, gr_title, is_in_progress, is_complete FROM goals_routines where user_id = \'""" +user_id+ """\' and is_displayed_today = 'True';""", 'get', conn)
+
+            if len(goals['result']) > 0:
+                goal = {}
+                for i in range(len(goals['result'])):
+                
+                    if goals['result'][i]['is_in_progress'].lower() == 'true':
+                        goal[goals['result'][i]['gr_title']] = 'in_progress'
+                    elif goals['result'][i]['is_complete'].lower() == 'true':
+                        goal[goals['result'][i]['gr_title']] = 'completed'
+                    else:
+                        goal[goals['result'][i]['gr_title']] = 'not started'
+
+                res[today_date] = goal
+
+            response['message'] = 'successful'
+            response['result'] = res
+            return response, 200
+        except:
+            raise BadRequest('Request failed, please try again later.')
+        finally:
+            disconnect(conn)
+
+class ParticularGoalHistory(Resource):
+    def get(self, user_id):
+        response = {}
+        try:
+            conn = connect()
+            
+            start_date = request.headers['start_date']
+            print(start_date)
+            end_date = request.headers['end_date']
+            gr_id = request.headers['goal_routine_id']
+
+            print(gr_id)
+
+            items = execute("""SELECT * FROM history where user_id = \'""" +user_id+ """\';""", 'get', conn)
+
+            details_json = {}
+            res = {}
+
+            for i in range(len(items['result'])):
+                if items['result'][i]['date_affected'] >= start_date and items['result'][i]['date_affected'] <= end_date:
+                    goal = [{}]
+                    res_p = 0
+                    if items['result'][i]['details'][0] == '[':
+                        details_json = json.loads(items['result'][i]['details'])
+                        for k in range(len(details_json)):
+                            if len(details_json[k]) > 0:
+                                if 'goal' in details_json[k] and 'status' in details_json[k] and gr_id == details_json[k]['goal']:
+
+                                    goal[res_p][details_json[k]['title']] = details_json[k]['status']
+                                    if 'actions' in details_json[k]:
+                                        action = {}
+                                        for j in range(len(details_json[k]['actions'])):
+                                            action[details_json[k]['actions'][j]['title']] = details_json[k]['actions'][j]['status'] 
+                                        goal[res_p]['actions'] = action
+
+                                    res_p += 1
+
+                    if len(goal[0]) > 1:
+                        res[items['result'][i]['date_affected']] = dict(goal[0])
+
+            today_date = getToday()
+
+            goals = execute("""SELECT gr_unique_id, gr_title, is_in_progress, is_complete FROM goals_routines where user_id = \'""" +user_id+ """\' and is_displayed_today = 'True' and is_persistent = 'False';""", 'get', conn)
+
+            if len(goals['result']) > 0:
+                goal = {}
+                for i in range(len(goals['result'])):
+                    if gr_id == goals['result'][i]['gr_unique_id']:
+                        if goals['result'][i]['is_in_progress'].lower() == 'true':
+                            goal[goals['result'][i]['gr_title']] = 'in_progress'
+                        elif goals['result'][i]['is_complete'].lower() == 'true':
+                            goal[goals['result'][i]['gr_title']] = 'completed'
+                        else:
+                            goal[goals['result'][i]['gr_title']] = 'not started'
+                        actions = execute("""SELECT at_unique_id, at_title, is_in_progress, is_complete FROM actions_tasks where goal_routine_id = \'""" +goals['result'][i]['gr_unique_id']+ """\';""", 'get', conn)
+                        if len(actions['result']) > 0:
+                            action = {}
+                            for j in range(len(actions['result'])):
+                                if actions['result'][j]['is_in_progress'].lower() == 'true':
+                                    action[actions['result'][j]['at_title']] = 'in_progress'
+                                elif actions['result'][j]['is_complete'].lower() == 'true':
+                                    action[actions['result'][j]['at_title']] = 'completed'
+                                else:
+                                    action[actions['result'][j]['at_title']] = 'not started'
+                            goal['actions'] = action
+                res[today_date] = goal
+
 
             response['message'] = 'successful'
             response['result'] = res
@@ -4231,6 +4383,22 @@ class GoalHistory(Resource):
                     if len(goal) > 0:
                         res[items['result'][i]['date_affected']] = goal
 
+            today_date = getToday()
+
+            goals = execute("""SELECT gr_unique_id, gr_title, is_in_progress, is_complete FROM goals_routines where user_id = \'""" +user_id+ """\' and is_displayed_today = 'True' and is_persistent = 'False';""", 'get', conn)
+
+            if len(goals['result']) > 0:
+                goal = {}
+                for i in range(len(goals['result'])):
+                
+                    if goals['result'][i]['is_in_progress'].lower() == 'true':
+                        goal[goals['result'][i]['gr_title']] = 'in_progress'
+                    elif goals['result'][i]['is_complete'].lower() == 'true':
+                        goal[goals['result'][i]['gr_title']] = 'completed'
+                    else:
+                        goal[goals['result'][i]['gr_title']] = 'not started'
+
+                res[today_date] = goal
             response['message'] = 'successful'
             response['result'] = res
             return response, 200
@@ -4281,7 +4449,21 @@ class RoutineHistory(Resource):
                     #                 routine[value['title']] = 'not started'
                     if len(routine) > 0:
                         res[items['result'][i]['date_affected']] = routine
-            
+            routines = execute("""SELECT gr_unique_id, gr_title, is_in_progress, is_complete FROM goals_routines where user_id = \'""" +user_id+ """\' and is_displayed_today = 'True' and is_persistent = 'True';""", 'get', conn)
+            today_date = getToday()
+
+            if len(routines['result']) > 0:
+                routine = {}
+                for i in range(len(routines['result'])):
+                
+                    if routines['result'][i]['is_in_progress'].lower() == 'true':
+                        routine[routines['result'][i]['gr_title']] = 'in_progress'
+                    elif routines['result'][i]['is_complete'].lower() == 'true':
+                        routine[routines['result'][i]['gr_title']] = 'completed'
+                    else:
+                        routine[routines['result'][i]['gr_title']] = 'not started'
+
+                res[today_date] = routine
             response['message'] = 'successful'
             response['result'] = res
             return response, 200
@@ -5478,6 +5660,252 @@ class UpdateVersionNumber(Resource):
         finally:
             disconnect(conn)
 
+class CopyGR(Resource):
+    def post(self):
+        response = {}
+        items = {}
+
+        try:
+
+            conn = connect()
+            data = request.get_json(force=True)
+
+            user_id = data['user_id']
+            goal_routine_id = data['gr_id']
+            ta_id = data['ta_id']
+
+            items = execute("""SELECT * FROM goals_routines WHERE gr_unique_id = \'""" +goal_routine_id+ """\';""", 'get', conn)
+
+            notification = execute("""SELECT * FROM notifications WHERE gr_at_id = \'""" +goal_routine_id+ """\';""", 'get', conn)
+
+            goal_routine_response = items['result']
+
+            # New Goal/Routine ID
+            query = ["CALL get_gr_id;"]
+            new_gr_id_response = execute(query[0],  'get', conn)
+            new_gr_id = new_gr_id_response['result'][0]['new_id']
+
+            execute("""INSERT INTO goals_routines(gr_unique_id
+                                , gr_title
+                                , user_id
+                                , is_available
+                                , is_complete
+                                , is_in_progress
+                                , is_displayed_today
+                                , is_persistent
+                                , is_sublist_available
+                                , is_timed
+                                , photo
+                                , `repeat`
+                                , repeat_type
+                                , repeat_ends_on
+                                , repeat_every
+                                , repeat_frequency
+                                , repeat_occurences
+                                , start_day_and_time
+                                , repeat_week_days
+                                , datetime_completed
+                                , datetime_started
+                                , end_day_and_time
+                                , expected_completion_time)
+                            VALUES 
+                            ( \'""" + new_gr_id + """\'
+                            , \'""" + goal_routine_response[0]['gr_title'] + """\'
+                            , \'""" + user_id + """\'
+                            , \'""" + goal_routine_response[0]['is_available'] + """\'
+                            , \'""" + 'False' + """\'
+                            , \'""" + 'False' + """\'
+                            , \'""" + goal_routine_response[0]['is_displayed_today'] + """\'
+                            , \'""" + goal_routine_response[0]['is_persistent'] + """\'
+                            , \'""" + goal_routine_response[0]['is_sublist_available'] + """\'
+                            , \'""" + 'False' + """\'
+                            , \'""" + goal_routine_response[0]['photo'] + """\'
+                            , \'""" + goal_routine_response[0]['repeat'] + """\'
+                            , \'""" + goal_routine_response[0]['repeat_type'] + """\'
+                            , \'""" + goal_routine_response[0]['repeat_ends_on'] + """\'
+                            , \'""" + str(goal_routine_response[0]['repeat_every']) + """\'
+                            , \'""" + str(goal_routine_response[0]['repeat_frequency']) + """\'
+                            , \'""" + str(goal_routine_response[0]['repeat_occurences']) + """\'
+                            , \'""" + goal_routine_response[0]['start_day_and_time'] + """\'
+                            , \'""" + goal_routine_response[0]['repeat_week_days'] + """\'
+                            , \'""" + goal_routine_response[0]['datetime_completed'] + """\'
+                            , \'""" + goal_routine_response[0]['datetime_started'] + """\'
+                            , \'""" + goal_routine_response[0]['end_day_and_time'] + """\'
+                            , \'""" + goal_routine_response[0]['expected_completion_time'] + """\');""", 'post', conn)
+           
+            # New Notification ID
+            new_notification_id_response = execute("CALL get_notification_id;",  'get', conn)
+            new_notfication_id = new_notification_id_response['result'][0]['new_id']
+
+            notifications = notification['result']
+            person_id = ""
+            if notifications[0]['user_ta_id'][0] == '1':
+                person_id = user_id
+            else:
+                person_id = ta_id
+
+            execute("""Insert into notifications
+                                (notification_id
+                                    , user_ta_id
+                                    , gr_at_id
+                                    , before_is_enable
+                                    , before_is_set
+                                    , before_message
+                                    , before_time
+                                    , during_is_enable
+                                    , during_is_set
+                                    , during_message
+                                    , during_time
+                                    , after_is_enable
+                                    , after_is_set
+                                    , after_message
+                                    , after_time) 
+                                VALUES
+                                (     \'""" + new_notfication_id + """\'
+                                    , \'""" + person_id + """\'
+                                    , \'""" + new_gr_id + """\'
+                                    , \'""" + notifications[0]['before_is_enable'] + """\'
+                                    , \'""" + notifications[0]['before_is_set'] + """\'
+                                    , \'""" + notifications[0]['before_message'] + """\'
+                                    , \'""" + notifications[0]['before_time'] + """\'
+                                    , \'""" + notifications[0]['during_is_enable'] + """\'
+                                    , \'""" + notifications[0]['during_is_set'] + """\'
+                                    , \'""" + notifications[0]['during_message'] + """\'
+                                    , \'""" + notifications[0]['during_time'] + """\'
+                                    , \'""" + notifications[0]['after_is_enable'] + """\'
+                                    , \'""" + notifications[0]['after_is_set'] + """\'
+                                    , \'""" + notifications[0]['after_message'] + """\'
+                                    , \'""" + notifications[0]['after_time'] + """\');""", 'post', conn)
+            
+             # New Notification ID
+            new_notification_id_response = execute("CALL get_notification_id;",  'get', conn)
+            new_notfication_id = new_notification_id_response['result'][0]['new_id']
+
+            if notifications[1]['user_ta_id'][0] == '1':
+                person_id = user_id
+            else:
+                person_id = ta_id
+
+            execute("""Insert into notifications
+                                (notification_id
+                                    , user_ta_id
+                                    , gr_at_id
+                                    , before_is_enable
+                                    , before_is_set
+                                    , before_message
+                                    , before_time
+                                    , during_is_enable
+                                    , during_is_set
+                                    , during_message
+                                    , during_time
+                                    , after_is_enable
+                                    , after_is_set
+                                    , after_message
+                                    , after_time) 
+                                VALUES
+                                (     \'""" + new_notfication_id + """\'
+                                    , \'""" + person_id + """\'
+                                    , \'""" + new_gr_id + """\'
+                                    , \'""" + notifications[0]['before_is_enable'] + """\'
+                                    , \'""" + notifications[0]['before_is_set'] + """\'
+                                    , \'""" + notifications[0]['before_message'] + """\'
+                                    , \'""" + notifications[0]['before_time'] + """\'
+                                    , \'""" + notifications[0]['during_is_enable'] + """\'
+                                    , \'""" + notifications[0]['during_is_set'] + """\'
+                                    , \'""" + notifications[0]['during_message'] + """\'
+                                    , \'""" + notifications[0]['during_time'] + """\'
+                                    , \'""" + notifications[0]['after_is_enable'] + """\'
+                                    , \'""" + notifications[0]['after_is_set'] + """\'
+                                    , \'""" + notifications[0]['after_message'] + """\'
+                                    , \'""" + notifications[0]['after_time'] + """\');""", 'post', conn)
+            
+
+            res_actions = execute("""SELECT * FROM actions_tasks WHERE goal_routine_id = \'""" +goal_routine_id+ """\';""", 'get', conn)
+            
+            if len(res_actions['result']) > 0:
+                action_response = res_actions['result']
+                for j in range(len(action_response)):
+
+                    query = ["CALL get_at_id;"]
+                    NewATIDresponse = execute(query[0],  'get', conn)
+                    NewATID = NewATIDresponse['result'][0]['new_id']
+
+                    execute("""INSERT INTO actions_tasks(at_unique_id
+                            , at_title
+                            , goal_routine_id
+                            , at_sequence
+                            , is_available
+                            , is_complete
+                            , is_in_progress
+                            , is_sublist_available
+                            , is_must_do
+                            , photo
+                            , is_timed
+                            , datetime_completed
+                            , datetime_started
+                            , expected_completion_time
+                            , available_start_time
+                            , available_end_time)
+                        VALUES 
+                        ( \'""" + NewATID + """\'
+                        , \'""" + action_response[j]['at_title'] + """\'
+                        , \'""" + new_gr_id + """\'
+                        , \'""" + str(action_response[j]['at_sequence']) + """\'
+                        , \'""" + action_response[j]['is_available'] + """\'
+                        , \'""" + 'False' + """\'
+                        , \'""" + 'False' + """\'
+                        , \'""" + action_response[j]['is_sublist_available'] + """\'
+                        , \'""" + action_response[j]['is_must_do'] + """\'
+                        , \'""" + action_response[j]['photo'] + """\'
+                        , \'""" + action_response[j]['is_timed'] + """\'
+                        , \'""" + action_response[j]['datetime_completed'] + """\'
+                        , \'""" + action_response[j]['datetime_started'] + """\'
+                        , \'""" + action_response[j]['expected_completion_time'] + """\'
+                        , \'""" + action_response[j]['available_start_time'] + """\'
+                        , \'""" + action_response[j]['available_end_time'] + """\' );""", 'post', conn)
+
+                    res_ins = execute("""SELECT * FROM instructions_steps WHERE at_id = \'""" +action_response[j]['at_unique_id']+ """\';""", 'get', conn)
+
+                    if len(res_ins['result']) > 0:
+
+                        instructions = res_ins['result']
+
+                        for k in range(len(instructions)):
+
+                            query = ["CALL get_is_id;"]
+                            NewISIDresponse = execute(query[0],  'get', conn)
+                            NewISID = NewISIDresponse['result'][0]['new_id']
+
+                            execute("""INSERT INTO instructions_steps(unique_id
+                                            , title
+                                            , at_id
+                                            , is_sequence
+                                            , is_available
+                                            , is_complete
+                                            , is_in_progress
+                                            , photo
+                                            , is_timed
+                                            , expected_completion_time)
+                                        VALUES 
+                                        ( \'""" + NewISID + """\'
+                                        , \'""" + instructions[k]['title'] + """\'
+                                        , \'""" + NewATID + """\'
+                                        , \'""" + str(instructions[k]['is_sequence']) + """\'
+                                        , \'""" + instructions[k]['is_available'] + """\'
+                                        , \'""" + instructions[k]['is_complete'] + """\'
+                                        , \'""" + instructions[k]['is_in_progress'] + """\'
+                                        , \'""" + instructions[k]['photo'] + """\'
+                                        , \'""" + instructions[k]['is_timed'] + """\'
+                                        , \'""" + instructions[k]['expected_completion_time'] + """\');""", 'post', conn)
+                            
+
+            response['message'] = 'successful'
+
+            return response, 200
+        except:
+            raise BadRequest('Get Instructions?steps Request failed, please try again later.')
+        finally:
+            disconnect(conn)
 
 # New APIs, uses connect() and disconnect()
 # Create new api template URL
@@ -5490,6 +5918,8 @@ class UpdateVersionNumber(Resource):
 api.add_resource(GoalsRoutines, '/api/v2/getgoalsandroutines/<string:user_id>') # working
 api.add_resource(RTS, '/api/v2/rts/<string:user_id>') # working
 api.add_resource(GAI, '/api/v2/gai/<string:user_id>') # working
+api.add_resource(ActionsInstructions, '/api/v2/actionsInstructions/<string:gr_id>') # working
+
 api.add_resource(AboutMe,'/api/v2/aboutme/<string:user_id>') #working
 api.add_resource(TimeSettings,'/api/v2/timeSettings/<string:user_id>') #working
 api.add_resource(ListAllTA, '/api/v2/listAllTA/<string:user_id>') #working
@@ -5513,6 +5943,8 @@ api.add_resource(GetImages, '/api/v2/getImages/<string:user_id>')
 api.add_resource(GetPeopleImages, '/api/v2/getPeopleImages/<string:ta_id>')
 api.add_resource(GetHistory, '/api/v2/getHistory/<string:user_id>')
 api.add_resource(GoalHistory, '/api/v2/goalHistory/<string:user_id>')
+api.add_resource(ParticularGoalHistory, '/api/v2/particularGoalHistory/<string:user_id>')
+
 api.add_resource(RoutineHistory, '/api/v2/routineHistory/<string:user_id>')
 api.add_resource(GoalRoutineHistory, '/api/v2/goalRoutineHistory/<string:user_id>')
 api.add_resource(GetUserAndTime, '/api/v2/getUserAndTime')
@@ -5567,6 +5999,8 @@ api.add_resource(UpdateHappy, '/api/v2/updateHappy')
 api.add_resource(UpdateImportant, '/api/v2/updateImportant')
 api.add_resource(DeleteUser, '/api/v2/deleteUser')
 api.add_resource(UpdateVersionNumber, '/api/v2/updateVersionNumber')
+api.add_resource(CopyGR, '/api/v2/copyGR')
+
 # api.add_resource(ChangeSublist, '/api/v2/changeSub/<string:user_id>')
 
 
